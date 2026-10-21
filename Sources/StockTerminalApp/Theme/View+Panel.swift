@@ -157,10 +157,12 @@ struct ChangeChip: View {
 
 // MARK: - 交互
 
-/// 按压反馈：微缩放 + 轻微降透明（只在实际按压时驱动一次动画）
+/// 按压反馈：微缩放 + 轻微降透明（只在实际按压时驱动一次动画）。
+/// 强制整块 label 可点：`frame(maxWidth:)` 扩出来的空白默认不命中。
 struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.9 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)

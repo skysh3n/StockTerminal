@@ -94,6 +94,7 @@ struct WatchlistPanel: View {
                         .frame(width: 22, height: 22)
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color.dsElevated.opacity(0.8)))
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.6))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("新建板块")
@@ -121,6 +122,7 @@ struct WatchlistPanel: View {
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(active ? Color.dsAccent.opacity(0.45) : Color.dsBorder, lineWidth: 0.6)
                 )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
