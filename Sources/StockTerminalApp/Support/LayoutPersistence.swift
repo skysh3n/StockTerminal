@@ -70,6 +70,7 @@ extension View {
 // MARK: - 可拖分隔条
 
 /// 横向拖动改宽度。`sign == 1`：向右拖变宽；`sign == -1`：向右拖变窄。
+/// 使用全局坐标：分隔条随布局移动时，本地坐标会使 translation 抖动。
 struct WidthDragDivider: View {
     @Binding var width: CGFloat
     var sign: CGFloat = 1
@@ -93,9 +94,12 @@ struct WidthDragDivider: View {
                 else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
-                        if dragOrigin == nil { dragOrigin = width }
+                        // 用当前允许范围夹紧起点，避免窗口变窄后 origin 超出 range 造成一跳。
+                        if dragOrigin == nil {
+                            dragOrigin = LayoutStore.clamp(width, range)
+                        }
                         width = LayoutStore.clamp(
                             (dragOrigin ?? width) + sign * value.translation.width,
                             range
@@ -109,7 +113,7 @@ struct WidthDragDivider: View {
     }
 }
 
-/// 纵向拖动改比例（相对可用高度）。
+/// 纵向拖动改比例（相对可用高度）。全局坐标，避免分隔条移动带来的抖动。
 struct FractionDragDivider: View {
     @Binding var fraction: CGFloat
     var totalHeight: CGFloat
@@ -133,7 +137,7 @@ struct FractionDragDivider: View {
                 else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         guard totalHeight > 1 else { return }
                         if dragOrigin == nil { dragOrigin = fraction }

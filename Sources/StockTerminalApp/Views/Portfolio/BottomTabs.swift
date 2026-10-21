@@ -76,6 +76,8 @@ struct BottomTabs: View {
                         .padding(.horizontal, 8)
                 }
             }
+            // 文字与数字之间的空隙默认不响应命中，整块标签都要可点。
+            .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
     }

@@ -9,7 +9,7 @@ import DesignSystem
 extension View {
     /// 浮层卡片：面板底色 + 发丝描边 + 顶部内高光
     func terminalCard(radius: CGFloat = 10) -> some View {
-        let sheen = ThemePaletteCache.theme == .dark ? 0.028 : 0.04
+        let sheen = ThemePaletteCache.isDark ? 0.028 : 0.04
         return self
             .background(
                 RoundedRectangle(cornerRadius: radius)
@@ -31,7 +31,7 @@ extension View {
 
     /// 双层嵌套卡（Double-Bezel）：外层托盘 + 内层核心，同心圆角
     func bezel(radius: CGFloat = 12) -> some View {
-        let sheen = ThemePaletteCache.theme == .dark ? 0.035 : 0.05
+        let sheen = ThemePaletteCache.isDark ? 0.035 : 0.05
         return self
             .background(
                 RoundedRectangle(cornerRadius: radius)
@@ -55,7 +55,7 @@ extension View {
 
     /// 输入槽
     func inputBox(focused: Bool = false) -> some View {
-        let inset = ThemePaletteCache.theme == .dark ? 0.15 : 0.04
+        let inset = ThemePaletteCache.isDark ? 0.15 : 0.04
         return background(
             RoundedRectangle(cornerRadius: 7)
                 .fill(Color.dsInput)

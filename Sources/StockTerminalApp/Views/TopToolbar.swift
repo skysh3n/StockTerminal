@@ -113,9 +113,9 @@ struct TopToolbar: View {
 
     private var themeToggle: some View {
         Button {
-            theme.toggle()
+            theme.cycle()
         } label: {
-            Image(systemName: theme.theme == .dark ? "sun.max" : "moon")
+            Image(systemName: theme.theme.iconName)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Color.dsTextSecondary)
                 .frame(width: 26, height: 26)
@@ -124,7 +124,7 @@ struct TopToolbar: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(theme.theme == .dark ? "切换到浅色主题" : "切换到深色主题")
+        .help("主题：\(theme.theme.label)（点击切换 深色 / 浅色 / 自动）")
     }
 
     // MARK: - 数据源徽章

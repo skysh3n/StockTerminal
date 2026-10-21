@@ -36,7 +36,7 @@ struct CrosshairCanvas: View {
             ctx.stroke(h, with: .color(Color.dsTextSecondary.opacity(0.5)),
                        style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
 
-            // 右轴价格标签
+            // 右轴价格标签（保持原涨跌配色 + 白字）
             let price = layout.price(y: hy)
             let priceColor: Color = {
                 guard let pre = preClose else { return .dsElevated }
@@ -46,14 +46,14 @@ struct CrosshairCanvas: View {
                     text: String(format: "%.2f", price),
                     rect: CGRect(x: size.width - layout.rightMargin + 3, y: hy - 8.5,
                                  width: layout.rightMargin - 6, height: 17),
-                    bg: priceColor)
+                    bg: priceColor, lightText: true)
 
-            // 底部时间标签
+            // 底部日期：浅色主题下用主文字色，避免白字配浅底看不清
             let timeText = Fmt.chartTime(bar.timestamp, tf: tf)
             let tw = CGFloat(timeText.count) * 6.6 + 12
             drawTag(ctx: ctx, text: timeText,
                     rect: CGRect(x: x - tw / 2, y: plotBottom + 1, width: tw, height: 15),
-                    bg: Color.dsElevated)
+                    bg: Color.dsElevated, lightText: false)
 
             // 左上信息框：时间 / OHLC / 涨跌 / 成交量
             drawInfoBox(ctx: ctx, bar: bar, idx: idx)
@@ -61,15 +61,16 @@ struct CrosshairCanvas: View {
         .allowsHitTesting(false)
     }
 
-    private func drawTag(ctx: GraphicsContext, text: String, rect: CGRect, bg: Color) {
+    private func drawTag(ctx: GraphicsContext, text: String, rect: CGRect, bg: Color, lightText: Bool) {
         ctx.fill(Path(roundedRect: rect, cornerRadius: 4), with: .color(bg))
         ctx.stroke(Path(roundedRect: rect.insetBy(dx: 0.3, dy: 0.3), cornerRadius: 3.8),
-                   with: .color(.white.opacity(0.16)), lineWidth: 0.6)
+                   with: .color(lightText ? .white.opacity(0.16) : Color.dsBorderStrong.opacity(0.55)),
+                   lineWidth: 0.6)
         ctx.draw(
             Text(text)
                 .font(.system(size: 9.5, weight: .semibold).monospacedDigit())
                 .tracking(0.2)
-                .foregroundColor(.white),
+                .foregroundColor(lightText ? .white : .dsTextPrimary),
             at: CGPoint(x: rect.midX, y: rect.midY), anchor: .center
         )
     }

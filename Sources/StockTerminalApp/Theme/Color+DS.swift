@@ -2,7 +2,7 @@ import SwiftUI
 import DesignSystem
 
 // MARK: - ColorToken → SwiftUI Color 绑定
-// 色值来自 ThemePaletteCache（切换主题时由 ThemeStore 写入），根视图 .id(theme) 触发重绘。
+// 色值来自 ThemePaletteCache（切换主题时由 ThemeStore 写入），根视图 .id 触发重绘。
 
 extension Color {
     init(_ token: ColorToken) {
@@ -44,6 +44,6 @@ extension Color {
 
     /// 面板顶部高光（深色白 / 浅色黑）
     static var dsSheen: Color {
-        ThemePaletteCache.theme == .dark ? .white : .black
+        ThemePaletteCache.isDark ? .white : .black
     }
 }

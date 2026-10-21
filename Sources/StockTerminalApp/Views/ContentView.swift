@@ -41,10 +41,14 @@ struct ContentView: View {
                 .layoutPriority(2)
 
             GeometryReader { geo in
+                // 中间栏吃剩余宽度，避免 left+mid+right 算出来超过总宽导致 HStack 互相挤压抖动。
                 let gap: CGFloat = 5
-                let left = layout.leftWidth
-                let right = layout.rightWidth
-                let mid = max(420, geo.size.width - left - right - gap * 2)
+                let midMin: CGFloat = 420
+                let usable = max(geo.size.width - gap * 2, midMin + 200 + 260)
+                let leftMax = min(420, max(200, usable - midMin - layout.rightWidth))
+                let rightMax = min(440, max(260, usable - midMin - layout.leftWidth))
+                let left = LayoutStore.clamp(layout.leftWidth, 200...leftMax)
+                let right = LayoutStore.clamp(layout.rightWidth, 260...rightMax)
 
                 HStack(spacing: 0) {
                     WatchlistPanel()
@@ -57,18 +61,18 @@ struct ContentView: View {
                     WidthDragDivider(
                         width: $layout.leftWidth,
                         sign: 1,
-                        range: 200...420,
+                        range: 200...leftMax,
                         onSave: { layout.scheduleSave() }
                     )
 
                     centerColumn
-                        .frame(width: mid)
+                        .frame(maxWidth: .infinity)
                         .clipped()
 
                     WidthDragDivider(
                         width: $layout.rightWidth,
                         sign: -1,
-                        range: 260...440,
+                        range: 260...rightMax,
                         onSave: { layout.scheduleSave() }
                     )
 
@@ -195,7 +199,7 @@ struct ContentView: View {
         ZStack {
             Color.dsBgBase
             RadialGradient(
-                colors: [Color.dsSheen.opacity(ThemePaletteCache.theme == .dark ? 0.035 : 0.06), .clear],
+                colors: [Color.dsSheen.opacity(ThemePaletteCache.isDark ? 0.035 : 0.06), .clear],
                 center: .top, startRadius: 0, endRadius: 640
             )
         }
