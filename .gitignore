@@ -5,9 +5,8 @@
 .build/
 build/
 DerivedData/
-*.xcodeproj/
-*.xcworkspace/
 xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 .swiftpm/xcode/package.xcworkspace/xcuserdata/
 .swiftpm/config/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata

@@ -18,6 +18,14 @@ swift run StockTerminal          # 开发模式（裸可执行，自动进前台
 ./Scripts/build-app.sh && open build/StockTerminal.app
 ```
 
+用 Xcode 开发：打开 `StockTerminal.xcodeproj`，选「量化终端」scheme，⌘R 运行。
+App 源码目录 `Sources/StockTerminalApp` 以同步文件夹接入（增删文件无需改工程），
+`TradingCore` / `DesignSystem` 通过本地 Swift 包引用；同一 scheme 下 ⌘U 跑全部单测。
+
+```bash
+open StockTerminal.xcodeproj
+```
+
 测试（33 个：撮合/资金/T+1/指标/数据生成）：
 
 ```bash
