@@ -9,6 +9,10 @@ struct CandleChartView: View {
     let viewport: Viewport
     let overlayKind: MainOverlay
     let showSR: Bool
+    /// 是否允许捏合 / 双指纵向滚轮缩放。全球指数关闭，只保留左右平移。
+    var allowsZoom: Bool = true
+    /// 平移灵敏度：>1 同样拖动距离移动更多根 K 线。
+    var panSensitivity: CGFloat = 1
 
     var body: some View {
         GeometryReader { geo in
@@ -42,21 +46,20 @@ struct CandleChartView: View {
                 }
             }
             .gesture(
-                DragGesture(minimumDistance: 6)
+                DragGesture(minimumDistance: 4)
                     .onChanged { g in
-                        viewport.pan(translationX: g.translation.width,
-                                     spacing: layout.candleSpacing, totalBars: bars.count)
+                        // 只取横向位移，避免触控板纵向滑动干扰平移。
+                        viewport.pan(
+                            translationX: g.translation.width * panSensitivity,
+                            spacing: layout.candleSpacing,
+                            totalBars: bars.count
+                        )
                     }
                     .onEnded { _ in viewport.panStartOffset = nil }
             )
-            .simultaneousGesture(
-                MagnifyGesture()
-                    .onChanged { g in viewport.pinch(magnification: g.magnification) }
-                    .onEnded { _ in viewport.pinchStartCount = nil }
-            )
+            .modifier(CandleZoomGestures(enabled: allowsZoom, viewport: viewport))
             .onTapGesture(count: 2) { viewport.reset() }
         }
-        .overlay(WheelCatcher { dy in viewport.wheelZoom(deltaY: dy) })
     }
 
     /// 指标线 → 配色（MA/EMA 四色，BOLL 白/金/紫）
@@ -66,6 +69,26 @@ struct CandleChartView: View {
             : [.dsMA5, .dsMA10, .dsMA20, .dsMA60]
         return lines.enumerated().map { idx, line in
             ChartLine(name: line.name, color: palette[min(idx, palette.count - 1)], values: line.values)
+        }
+    }
+}
+
+/// 捏合 + 滚轮缩放；全球指数可关掉，只保留左右拖拽平移。
+private struct CandleZoomGestures: ViewModifier {
+    let enabled: Bool
+    let viewport: Viewport
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .simultaneousGesture(
+                    MagnifyGesture()
+                        .onChanged { g in viewport.pinch(magnification: g.magnification) }
+                        .onEnded { _ in viewport.pinchStartCount = nil }
+                )
+                .overlay(WheelCatcher { dy in viewport.wheelZoom(deltaY: dy) })
+        } else {
+            content
         }
     }
 }

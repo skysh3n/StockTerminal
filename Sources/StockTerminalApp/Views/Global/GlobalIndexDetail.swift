@@ -2,13 +2,12 @@ import SwiftUI
 import DesignSystem
 import TradingCore
 
-/// 全球指数详情：布局与交互沿用个股 ChartPanel（头部 / 周期 Tab / 分时·蜡烛 / 副图指标）。
+/// 全球指数详情：布局沿用个股图表；去掉支撑压力；K 线仅左右平移；分时加高分时量。
 struct GlobalIndexDetail: View {
     @Environment(AppEnvironment.self) private var env
     @State private var viewport = Viewport()
     @State private var overlayKind: MainOverlay = .ma
     @State private var subKind: SubIndicator = .macd
-    @State private var showSR = true
 
     var body: some View {
         let store = env.globalMarkets
@@ -26,7 +25,7 @@ struct GlobalIndexDetail: View {
         }
     }
 
-    // MARK: - 头部（与个股 ChartHeader 同款）
+    // MARK: - 头部
 
     private func header(_ index: GlobalIndex, quote: GlobalIndexQuote?, now: Date) -> some View {
         let trading = index.isTrading(at: now)
@@ -79,7 +78,7 @@ struct GlobalIndexDetail: View {
         .help("返回全球市场")
     }
 
-    // MARK: - 工具条（与个股一致）
+    // MARK: - 工具条（无支撑压力）
 
     private var toolbar: some View {
         let store = env.globalMarkets
@@ -104,10 +103,6 @@ struct GlobalIndexDetail: View {
                             overlayKind = kind
                         }
                     }
-                    Rectangle().fill(Color.dsBorder).frame(width: 0.5, height: 11)
-                        .padding(.horizontal, 3)
-                    MiniTab(label: "支撑压力", active: showSR) { showSR.toggle() }
-                        .help("支撑压力：自动识别摆动高低点并聚类")
                 }
             }
         }
@@ -131,10 +126,18 @@ struct GlobalIndexDetail: View {
             if store.chartTab == .timeShare, index.tencentMinuteCode == nil {
                 EmptyHint(text: "该市场暂无分时数据，可切换日K / 周K / 月K")
             } else if let s = series, !s.isEmpty, s.timeFrame == .timeShare {
-                TimeShareChartView(series: s, viewport: viewport)
+                // 按实际分钟铺满 + 加高底部量能，确保分时量可见。
+                TimeShareChartView(series: s, viewport: viewport, fitBarsToWidth: true)
             } else if let s = series, !s.isEmpty {
                 VStack(spacing: 0) {
-                    CandleChartView(series: s, viewport: viewport, overlayKind: overlayKind, showSR: showSR)
+                    CandleChartView(
+                        series: s,
+                        viewport: viewport,
+                        overlayKind: overlayKind,
+                        showSR: false,
+                        allowsZoom: false,
+                        panSensitivity: 1.85
+                    )
                     Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
                     subPaneBar
                     if subKind == .vol {

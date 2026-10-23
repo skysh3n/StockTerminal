@@ -37,22 +37,32 @@ struct TimeShareRenderData {
     }
 }
 
-/// 分时图布局：横轴固定 240 分钟槽位（9:30-11:30, 13:00-15:00），底部成交量带
+/// 分时图布局：A 股默认 240 分钟槽；全球指数可按实际分钟数铺满，底部为分时量。
 struct TimeShareLayout {
     let size: CGSize
     let data: TimeShareRenderData
+    /// 横轴槽位数；A 股固定 240，全球指数用实际 bar 数。
+    let slots: Int
+    let volHeight: CGFloat
 
     static let rightMargin: CGFloat = 68
     static let bottomMargin: CGFloat = 18
     static let topMargin: CGFloat = 10
-    static let volHeight: CGFloat = 46
-    static let slots = 240
+    static let defaultVolHeight: CGFloat = 46
+    static let defaultSlots = 240
+
+    init(size: CGSize, data: TimeShareRenderData, slots: Int = Self.defaultSlots, volHeight: CGFloat = Self.defaultVolHeight) {
+        self.size = size
+        self.data = data
+        self.slots = max(slots, 2)
+        self.volHeight = volHeight
+    }
 
     var plotWidth: CGFloat { max(size.width - Self.rightMargin, 10) }
-    var priceBottom: CGFloat { size.height - Self.bottomMargin - Self.volHeight - 8 }
+    var priceBottom: CGFloat { size.height - Self.bottomMargin - volHeight - 8 }
     var priceHeight: CGFloat { max(priceBottom - Self.topMargin, 10) }
 
-    func x(_ i: Int) -> CGFloat { plotWidth * CGFloat(i) / CGFloat(Self.slots - 1) }
+    func x(_ i: Int) -> CGFloat { plotWidth * CGFloat(i) / CGFloat(slots - 1) }
 
     func y(_ p: Double) -> CGFloat {
         let t = (p - data.priceMin) / max(data.priceMax - data.priceMin, 1e-9)
@@ -60,7 +70,7 @@ struct TimeShareLayout {
     }
 
     func index(x: CGFloat) -> Int {
-        min(max(Int((x / plotWidth) * CGFloat(Self.slots - 1)), 0), Self.slots - 1)
+        min(max(Int((x / plotWidth) * CGFloat(slots - 1)), 0), slots - 1)
     }
 
     func price(y: CGFloat) -> Double {
@@ -103,17 +113,36 @@ struct TimeShareCanvas: View {
             ctx.draw(Text(String(format: "%+.1f%%", pct)).font(.system(size: 9.5, weight: .regular).monospacedDigit()).foregroundColor(color.opacity(0.7)),
                      at: CGPoint(x: 24, y: y), anchor: .center)
         }
-        // 纵向：五个时段刻度
-        let labels = [(0, "09:30"), (60, "10:30"), (120, "11:30"), (180, "14:00"), (239, "15:00")]
+        // 纵向时段刻度：A 股固定五段；按 bar 铺满时取首尾与等分点的实际时间。
+        let labels: [(Int, String)] = {
+            if layout.slots == TimeShareLayout.defaultSlots {
+                return [(0, "09:30"), (60, "10:30"), (120, "11:30"), (180, "14:00"), (239, "15:00")]
+            }
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm"
+            let last = layout.slots - 1
+            let marks = [0, last / 4, last / 2, last * 3 / 4, last]
+            return marks.map { i in
+                let text: String
+                if i < data.bars.count {
+                    text = f.string(from: data.bars[i].timestamp)
+                } else {
+                    text = ""
+                }
+                return (i, text)
+            }
+        }()
         for (slot, text) in labels {
-            let x = layout.x(slot)
+            let x = layout.x(min(slot, layout.slots - 1))
             var line = Path()
             line.move(to: CGPoint(x: x, y: TimeShareLayout.topMargin))
             line.addLine(to: CGPoint(x: x, y: size.height - TimeShareLayout.bottomMargin))
             ctx.stroke(line, with: .color(Color.dsBorder.opacity(0.22)), lineWidth: 0.5)
-            ctx.draw(Text(text).font(.system(size: 9.5, weight: .regular).monospacedDigit()).tracking(0.2).foregroundColor(Color.dsTextTertiary),
-                     at: CGPoint(x: min(max(x, 20), size.width - TimeShareLayout.rightMargin - 20),
-                                 y: size.height - TimeShareLayout.bottomMargin / 2), anchor: .center)
+            if !text.isEmpty {
+                ctx.draw(Text(text).font(.system(size: 9.5, weight: .regular).monospacedDigit()).tracking(0.2).foregroundColor(Color.dsTextTertiary),
+                         at: CGPoint(x: min(max(x, 20), size.width - TimeShareLayout.rightMargin - 20),
+                                     y: size.height - TimeShareLayout.bottomMargin / 2), anchor: .center)
+            }
         }
         // 右轴线
         var axis = Path()
@@ -178,13 +207,18 @@ struct TimeShareCanvas: View {
 
     private func drawVolume(ctx: GraphicsContext, size: CGSize) {
         let baseY = size.height - TimeShareLayout.bottomMargin
-        let w = max(layout.plotWidth / CGFloat(TimeShareLayout.slots) * 0.75, 0.8)
+        let w = max(layout.plotWidth / CGFloat(layout.slots) * 0.75, 0.8)
         for (i, b) in data.bars.enumerated() {
-            let h = CGFloat(Double(b.volume) / data.volMax) * TimeShareLayout.volHeight
+            guard i < layout.slots else { break }
+            let h = CGFloat(Double(b.volume) / data.volMax) * layout.volHeight
             guard h > 0.3 else { continue }
-            let color = b.isUp ? Sem.up : Sem.down
+            // 分时量颜色：相对前一分钟涨跌（指数分时 open==close，不能用 isUp）
+            let up: Bool = {
+                if i == 0 { return b.close.doubleValue >= data.preClose }
+                return b.close >= data.bars[i - 1].close
+            }()
             let rect = CGRect(x: layout.x(i) - w / 2, y: baseY - h, width: w, height: h)
-            ctx.fill(Path(rect), with: .color(color.opacity(0.75)))
+            ctx.fill(Path(rect), with: .color((up ? Sem.up : Sem.down).opacity(0.75)))
         }
     }
 }
@@ -257,12 +291,16 @@ struct TimeShareCrosshair: View {
 struct TimeShareChartView: View {
     let series: KLineSeries
     let viewport: Viewport
+    /// `true`：横轴按实际分钟数铺满（全球指数），并加高分时量区域。
+    var fitBarsToWidth: Bool = false
 
     var body: some View {
         GeometryReader { geo in
             let bars = series.bars
             let data = TimeShareRenderData.build(bars: bars, preClose: series.preClose)
-            let layout = TimeShareLayout(size: geo.size, data: data)
+            let slots = fitBarsToWidth ? max(bars.count, 2) : TimeShareLayout.defaultSlots
+            let volH: CGFloat = fitBarsToWidth ? 64 : TimeShareLayout.defaultVolHeight
+            let layout = TimeShareLayout(size: geo.size, data: data, slots: slots, volHeight: volH)
             ZStack {
                 Color.clear
                 TimeShareCanvas(data: data, layout: layout)
