@@ -15,6 +15,8 @@ struct GlobalIndexDetail: View {
             let all = store.history[index.id] ?? []
             let bars = Array(all.suffix(store.range.days))
             VStack(alignment: .leading, spacing: 0) {
+                backBar
+                Rectangle().fill(Color.dsBorder.opacity(0.6)).frame(height: 0.5)
                 header(index, quote: quote, now: store.now)
                 Rectangle().fill(Color.dsBorder.opacity(0.6)).frame(height: 0.5)
                 stats(quote: quote, all: all, bars: bars, range: store.range)
@@ -24,8 +26,28 @@ struct GlobalIndexDetail: View {
                 readOnlyNote
             }
         } else {
-            EmptyHint(text: "选择左侧指数查看详情")
+            EmptyHint(text: "点击卡片查看指数详情")
         }
+    }
+
+    private var backBar: some View {
+        Button {
+            env.globalMarkets.clearSelection()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("全球市场")
+                    .font(.dsFootnote(medium: true))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Color.dsAccent)
+            .padding(.horizontal, 18)
+            .frame(height: 34)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("返回全球市场总览")
     }
 
     // MARK: - 头部

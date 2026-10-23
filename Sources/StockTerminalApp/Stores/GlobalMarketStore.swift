@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import TradingCore
 
-/// 全球股指看板：列表快照 + 选中指数的日线。只在界面可见时轮询，隐藏后停止请求。
+/// 全球股指看板：总览卡片 + 点选详情。只在界面可见时轮询，隐藏后停止请求。
 @MainActor
 @Observable
 final class GlobalMarketStore {
@@ -20,6 +20,9 @@ final class GlobalMarketStore {
         }
     }
 
+    /// 卡片迷你曲线用最近约 1 个月交易日。
+    static let sparkDays = 22
+
     let indices = GlobalIndex.catalog
     private(set) var quotes: [String: GlobalIndexQuote] = [:]
     private(set) var lastUpdated: Date?
@@ -27,7 +30,8 @@ final class GlobalMarketStore {
     /// 交易状态与当地时间按这个时间计算，随每次轮询刷新。
     private(set) var now = Date()
 
-    var selectedID: String
+    /// `nil` = 总览卡片网格；有值 = 详情页。
+    var selectedID: String?
     var range: Range = .m6
     private(set) var history: [String: [GlobalIndexBar]] = [:]
     private(set) var historyLoading: Set<String> = []
@@ -37,14 +41,18 @@ final class GlobalMarketStore {
     private var pollTask: Task<Void, Never>?
     private let interval: Duration = .seconds(15)
 
-    init() {
-        selectedID = GlobalIndex.catalog.first?.id ?? ""
+    var selected: GlobalIndex? {
+        guard let selectedID else { return nil }
+        return indices.first { $0.id == selectedID }
     }
-
-    var selected: GlobalIndex? { indices.first { $0.id == selectedID } }
 
     func indices(in region: GlobalIndex.Region) -> [GlobalIndex] {
         indices.filter { $0.region == region }
+    }
+
+    /// 卡片迷你曲线：最近 `sparkDays` 根收盘价。
+    func sparkBars(for id: String) -> [GlobalIndexBar] {
+        Array((history[id] ?? []).suffix(Self.sparkDays))
     }
 
     func setVisible(_ visible: Bool) {
@@ -56,7 +64,8 @@ final class GlobalMarketStore {
                     try? await Task.sleep(for: self?.interval ?? .seconds(15))
                 }
             }
-            loadHistoryIfNeeded(selectedID)
+            prefetchSparklines()
+            if let selectedID { loadHistoryIfNeeded(selectedID, count: 800) }
         } else {
             pollTask?.cancel()
             pollTask = nil
@@ -65,7 +74,11 @@ final class GlobalMarketStore {
 
     func select(_ id: String) {
         selectedID = id
-        loadHistoryIfNeeded(id)
+        loadHistoryIfNeeded(id, count: 800)
+    }
+
+    func clearSelection() {
+        selectedID = nil
     }
 
     func refresh() async {
@@ -77,18 +90,29 @@ final class GlobalMarketStore {
         loading = false
     }
 
-    /// 日线 10 分钟内不重复拉取。
-    private func loadHistoryIfNeeded(_ id: String) {
+    /// 总览卡片：有历史源的指数各拉约 40 根日线（够画 1 个月迷你曲线）。
+    private func prefetchSparklines() {
+        for index in indices where index.history != nil {
+            loadHistoryIfNeeded(index.id, count: 40)
+        }
+    }
+
+    /// 日线 10 分钟内不重复拉取；已有足够根数则跳过。
+    private func loadHistoryIfNeeded(_ id: String, count: Int) {
         guard let index = indices.first(where: { $0.id == id }), index.history != nil,
               !historyLoading.contains(id) else { return }
-        if let at = historyFetchedAt[id], Date().timeIntervalSince(at) < 600, history[id]?.isEmpty == false {
-            return
+        let existing = history[id]?.count ?? 0
+        if let at = historyFetchedAt[id], Date().timeIntervalSince(at) < 600, existing >= min(count, Self.sparkDays) {
+            if count <= existing { return }
         }
         historyLoading.insert(id)
         Task {
-            let bars = await client.dailyHistory(for: index, count: 800)
+            let bars = await client.dailyHistory(for: index, count: count)
             if !bars.isEmpty {
-                history[id] = bars
+                // 详情需要更长历史时，保留较长的那份。
+                if bars.count >= (history[id]?.count ?? 0) {
+                    history[id] = bars
+                }
                 historyFetchedAt[id] = Date()
             }
             historyLoading.remove(id)
