@@ -5,8 +5,8 @@ let package = Package(
     name: "StockTerminal",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "StockTerminal", targets: ["StockTerminalApp"]),
-        .executable(name: "tokens-export", targets: ["TokensExportTool"]),
+        .executable(name: "StockTerminal", targets: ["StockTerminal"]),
+        .executable(name: "tokens-export", targets: ["tokens-export"]),
         .library(name: "TradingCore", targets: ["TradingCore"]),
         .library(name: "DesignSystem", targets: ["DesignSystem"]),
     ],
@@ -22,16 +22,18 @@ let package = Package(
             name: "DesignSystem",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
-        // macOS SwiftUI 应用层
+        // macOS SwiftUI 应用层。target 名须与 product 名一致，VS Code Swift 插件的运行按钮按 target 名找启动配置。
         .executableTarget(
-            name: "StockTerminalApp",
+            name: "StockTerminal",
             dependencies: ["TradingCore", "DesignSystem"],
+            path: "Sources/StockTerminalApp",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         // 设计 tokens 导出工具：swift run tokens-export > tokens.json
         .executableTarget(
-            name: "TokensExportTool",
+            name: "tokens-export",
             dependencies: ["DesignSystem"],
+            path: "Sources/TokensExportTool",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
