@@ -28,6 +28,26 @@ public struct GlobalIndex: Sendable, Identifiable, Hashable {
     public let source: Source
     public let session: Session
 
+    public enum HistorySource: Sendable, Hashable {
+        /// ifzq.gtimg.cn fqkline 代码；美股指数要写成 us.DJI
+        case tencent(String)
+        /// gi.finance.sina.com.cn/hq/daily 的 symbol
+        case sina(String)
+    }
+
+    /// 新浪全球日线里没有这几只，详情页只显示快照。
+    private static let sinaWithoutHistory: Set<String> = ["znb_FSSTI", "znb_SMI", "znb_SPTSX"]
+
+    public var history: HistorySource? {
+        switch source {
+        case .tencent(let code):
+            return .tencent(code.hasPrefix("us") ? "us." + code.dropFirst(2) : code)
+        case .sina(let code):
+            guard !Self.sinaWithoutHistory.contains(code), code.hasPrefix("znb_") else { return nil }
+            return .sina(String(code.dropFirst(4)))
+        }
+    }
+
     /// 按常规时段与周一至周五判断，不含各地节假日。
     public func isTrading(at date: Date) -> Bool {
         guard let tz = TimeZone(identifier: session.timeZone) else { return false }
@@ -94,6 +114,18 @@ public struct GlobalIndexQuote: Sendable, Hashable {
     public let last: Double
     public let change: Double
     public let changePercent: Double
+    public let open: Double?
+    public let preClose: Double?
     public let high: Double?
     public let low: Double?
+}
+
+/// 指数日线（无成交量，部分市场接口不给）。
+public struct GlobalIndexBar: Sendable, Hashable, Identifiable {
+    public let date: Date
+    public let open: Double
+    public let high: Double
+    public let low: Double
+    public let close: Double
+    public var id: Date { date }
 }

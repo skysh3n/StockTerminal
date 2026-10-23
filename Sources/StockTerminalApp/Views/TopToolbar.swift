@@ -21,6 +21,8 @@ struct TopToolbar: View {
 
             logo
 
+            workspaceSwitch
+
             // 搜索
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
@@ -56,7 +58,7 @@ struct TopToolbar: View {
                 }
             }
             .padding(.horizontal, 9)
-            .frame(width: 258, height: 28)
+            .frame(width: 236, height: 28)
             .inputBox(focused: searchFocused)
             .popover(isPresented: $showSearch, arrowEdge: .bottom) {
                 searchResults
@@ -107,6 +109,43 @@ struct TopToolbar: View {
                 .foregroundStyle(Color.dsTextPrimary)
             Tag(text: "PRO", color: .dsAccent)
         }
+    }
+
+    // MARK: - 工作区切换
+
+    private var workspaceSwitch: some View {
+        HStack(spacing: 2) {
+            workspaceButton(.trading, title: "交易", icon: "chart.bar.xaxis")
+                .help("交易终端：自选、K 线、五档与下单")
+            workspaceButton(.global, title: "全球", icon: "globe.asia.australia")
+                .help("全球市场：主要股指行情与走势（只读）")
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.dsElevated.opacity(0.8)))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.dsBorder, lineWidth: 0.6))
+    }
+
+    private func workspaceButton(_ ws: AppEnvironment.Workspace, title: String, icon: String) -> some View {
+        let selected = env.workspace == ws
+        return Button {
+            env.workspace = ws
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .medium))
+                Text(title)
+                    .font(.dsFootnote(medium: selected))
+            }
+            .foregroundStyle(selected ? Color.dsAccent : Color.dsTextSecondary)
+            .padding(.horizontal, 9)
+            .frame(height: 22)
+            .background(
+                RoundedRectangle(cornerRadius: 4.5)
+                    .fill(selected ? Color.dsAccent.opacity(0.14) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 主题切换

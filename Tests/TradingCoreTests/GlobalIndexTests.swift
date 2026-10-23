@@ -17,6 +17,32 @@ final class GlobalIndexTests: XCTestCase {
         XCTAssertEqual(quotes["hkHSI"]?.changePercent, 0.69)
         XCTAssertEqual(quotes["hkHSI"]?.high, 23231.63)
         XCTAssertEqual(quotes["sh000001"]?.low, 3574.27)
+        XCTAssertEqual(quotes["usDJI"]?.preClose, 52856.09)
+        XCTAssertEqual(quotes["usDJI"]?.open, 52788.41)
+    }
+
+    func testParseDailyHistory() {
+        let tencent = Data(#"{"code":0,"data":{"us.DJI":{"day":[["2026-10-21","52652.850","52856.090","52860.110","52392.280","359385262.000"],["2026-10-22","52788.410","52867.980","52927.880","52508.380","506198387.000"]]}}}"#.utf8)
+        let t = GlobalIndexClient.parseTencentDaily(tencent, code: "us.DJI")
+        XCTAssertEqual(t.count, 2)
+        XCTAssertEqual(t.last?.close, 52867.98)
+        XCTAssertEqual(t.last?.high, 52927.88)
+
+        let sina = Data(#"{"code":0,"message":"","result":{"data":[{"d":"2026-10-22","v":"0","c":"62907.84","o":"64539.36","l":"62907.84","h":"64866.44"},{"d":"2026-10-23","v":"0","c":"62693.1602","o":"62667.0508","l":"61462.6094","h":"62786.8906"}]}}"#.utf8)
+        let s = GlobalIndexClient.parseSinaDaily(sina)
+        XCTAssertEqual(s.count, 2)
+        XCTAssertEqual(s.first?.open, 64539.36)
+        XCTAssertLessThan(s[0].date, s[1].date)
+    }
+
+    func testHistorySourceMapping() {
+        func history(_ id: String) -> GlobalIndex.HistorySource? {
+            GlobalIndex.catalog.first { $0.id == id }?.history
+        }
+        XCTAssertEqual(history("usDJI"), .tencent("us.DJI"))
+        XCTAssertEqual(history("hkHSI"), .tencent("hkHSI"))
+        XCTAssertEqual(history("NKY"), .sina("NKY"))
+        XCTAssertNil(history("SMI"))
     }
 
     func testParseSinaIndices() {
@@ -65,5 +91,12 @@ final class GlobalIndexTests: XCTestCase {
         guard !quotes.isEmpty else { throw XCTSkip("离线或接口不可用") }
         XCTAssertNotNil(quotes["usDJI"])
         XCTAssertNotNil(quotes["NKY"])
+
+        let client = GlobalIndexClient()
+        for id in ["usDJI", "NKY"] {
+            let index = try XCTUnwrap(GlobalIndex.catalog.first { $0.id == id })
+            let bars = await client.dailyHistory(for: index, count: 30)
+            XCTAssertFalse(bars.isEmpty, "\(id) 应能取到日线")
+        }
     }
 }

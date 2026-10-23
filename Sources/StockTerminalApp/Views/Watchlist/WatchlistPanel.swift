@@ -13,34 +13,12 @@ struct WatchlistPanel: View {
     var body: some View {
         @Bindable var wl = env.watchlist
         VStack(spacing: 0) {
-            PanelHeader(wl.showingGlobal ? "全球市场" : (wl.activeBoard?.name ?? "自选")) {
-                Tag(text: "\(wl.showingGlobal ? env.globalMarkets.indices.count : wl.codes.count)", color: .dsTextSecondary)
+            PanelHeader(wl.activeBoard?.name ?? "自选") {
+                Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
             }
             boardStrip
             Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
 
-            if wl.showingGlobal {
-                GlobalMarketsList()
-            } else {
-                boardContent
-            }
-        }
-        .popover(isPresented: $showCreate, arrowEdge: .bottom) { namePopover(creating: true) }
-        .alert("重命名板块", isPresented: renamePresented) {
-            TextField("名称", text: $renameText)
-            Button("取消", role: .cancel) {}
-            Button("确定") {
-                if let renameTarget { env.watchlist.renameBoard(renameTarget.id, name: renameText) }
-            }
-        } message: {
-            Text("最多 12 个字，不能和已有板块重名。")
-        }
-    }
-
-    @ViewBuilder
-    private var boardContent: some View {
-        let wl = env.watchlist
-        VStack(spacing: 0) {
             // 列头
             HStack(spacing: 6) {
                 Text("代码 / 名称").tracking(0.3)
@@ -83,6 +61,16 @@ struct WatchlistPanel: View {
                 }
             }
         }
+        .popover(isPresented: $showCreate, arrowEdge: .bottom) { namePopover(creating: true) }
+        .alert("重命名板块", isPresented: renamePresented) {
+            TextField("名称", text: $renameText)
+            Button("取消", role: .cancel) {}
+            Button("确定") {
+                if let renameTarget { env.watchlist.renameBoard(renameTarget.id, name: renameText) }
+            }
+        } message: {
+            Text("最多 12 个字，不能和已有板块重名。")
+        }
     }
 
     private var renamePresented: Binding<Bool> {
@@ -93,9 +81,8 @@ struct WatchlistPanel: View {
         let wl = env.watchlist
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-                globalChip(active: wl.showingGlobal)
                 ForEach(wl.boards) { board in
-                    boardChip(board, active: !wl.showingGlobal && board.id == wl.activeBoardID)
+                    boardChip(board, active: board.id == wl.activeBoardID)
                 }
                 Button {
                     newName = ""
@@ -117,27 +104,25 @@ struct WatchlistPanel: View {
         }
     }
 
-    private func globalChip(active: Bool) -> some View {
-        Button {
-            env.watchlist.showingGlobal = true
-        } label: {
-            HStack(spacing: 3) {
-                Image(systemName: "globe.asia.australia")
-                    .font(.system(size: 9.5, weight: .medium))
-                Text("全球")
-            }
-            .modifier(BoardChipStyle(active: active))
-        }
-        .buttonStyle(.plain)
-        .help("全球主要股指")
-    }
-
     private func boardChip(_ board: WatchBoard, active: Bool) -> some View {
         Button {
             env.showBoard(board.id)
         } label: {
             Text(board.name)
-                .modifier(BoardChipStyle(active: active))
+                .font(.dsMicro(medium: active))
+                .lineLimit(1)
+                .foregroundStyle(active ? Color.dsTextPrimary : Color.dsTextTertiary)
+                .padding(.horizontal, 7)
+                .frame(height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(active ? Color.dsAccent.opacity(0.16) : Color.dsElevated.opacity(0.45))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(active ? Color.dsAccent.opacity(0.45) : Color.dsBorder, lineWidth: 0.6)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -199,28 +184,6 @@ struct WatchlistPanel: View {
         guard env.watchlist.createBoard(name: newName) != nil else { return }
         newName = ""
         showCreate = false
-    }
-}
-
-private struct BoardChipStyle: ViewModifier {
-    let active: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .font(.dsMicro(medium: active))
-            .lineLimit(1)
-            .foregroundStyle(active ? Color.dsTextPrimary : Color.dsTextTertiary)
-            .padding(.horizontal, 7)
-            .frame(height: 22)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(active ? Color.dsAccent.opacity(0.16) : Color.dsElevated.opacity(0.45))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(active ? Color.dsAccent.opacity(0.45) : Color.dsBorder, lineWidth: 0.6)
-            )
-            .contentShape(Rectangle())
     }
 }
 

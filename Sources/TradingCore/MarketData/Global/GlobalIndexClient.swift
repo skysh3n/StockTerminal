@@ -55,7 +55,7 @@ public struct GlobalIndexClient: Sendable {
         return GB18030.decode(data)
     }
 
-    /// `v_usDJI="200~道琼斯~.DJI~最新~昨收~...";`：3 最新、4 昨收、31 涨跌、32 涨跌幅、33 最高、34 最低。
+    /// `v_usDJI="200~道琼斯~.DJI~最新~昨收~今开~...";`：3 最新、4 昨收、5 今开、31 涨跌、32 涨跌幅、33 最高、34 最低。
     static func parseTencent(_ text: String, ids: [String: String]) -> [GlobalIndexQuote] {
         assignments(in: text, prefix: "v_").compactMap { code, body in
             guard let id = ids[code] else { return nil }
@@ -66,28 +66,105 @@ public struct GlobalIndexClient: Sendable {
             let pct = Double(f[32]) ?? (pre > 0 ? change / pre * 100 : 0)
             return GlobalIndexQuote(
                 id: id, last: last, change: change, changePercent: pct,
-                high: Double(f[33]).flatMap { $0 > 0 ? $0 : nil },
-                low: Double(f[34]).flatMap { $0 > 0 ? $0 : nil }
+                open: positive(f[5]),
+                preClose: pre > 0 ? pre : nil,
+                high: positive(f[33]),
+                low: positive(f[34])
             )
         }
     }
 
     /// `var hq_str_znb_NKY="日经225,最新,涨跌,涨跌幅,...,开盘,昨收,最高,最低,...";`
-    /// 部分指数只有前 6 个字段，没有高低价。
+    /// 部分指数只有前 6 个字段，没有开盘与高低价，昨收由最新价减涨跌推出。
     static func parseSina(_ text: String, ids: [String: String]) -> [GlobalIndexQuote] {
         assignments(in: text, prefix: "var hq_str_").compactMap { code, body in
             guard let id = ids[code] else { return nil }
             let f = body.components(separatedBy: ",")
             guard f.count >= 4, let last = Double(f[1]), last > 0 else { return nil }
             let full = f.count >= 12
+            let change = Double(f[2]) ?? 0
             return GlobalIndexQuote(
                 id: id, last: last,
-                change: Double(f[2]) ?? 0,
+                change: change,
                 changePercent: Double(f[3]) ?? 0,
-                high: full ? Double(f[10]).flatMap { $0 > 0 ? $0 : nil } : nil,
-                low: full ? Double(f[11]).flatMap { $0 > 0 ? $0 : nil } : nil
+                open: full ? positive(f[8]) : nil,
+                preClose: full ? positive(f[9]) : (last - change > 0 ? last - change : nil),
+                high: full ? positive(f[10]) : nil,
+                low: full ? positive(f[11]) : nil
             )
         }
+    }
+
+    private static func positive(_ s: String) -> Double? {
+        Double(s).flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    // MARK: - 日线
+
+    /// 最近 `count` 根日线，按日期升序。无历史源或请求失败返回空数组。
+    public func dailyHistory(for index: GlobalIndex, count: Int = 800) async -> [GlobalIndexBar] {
+        switch index.history {
+        case .tencent(let code):
+            let url = "https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=\(code),day,,,\(count),qfq"
+            guard let data = await fetchData(url, referer: "https://gu.qq.com/") else { return [] }
+            return Array(Self.parseTencentDaily(data, code: code).suffix(count))
+        case .sina(let symbol):
+            let url = "https://gi.finance.sina.com.cn/hq/daily?symbol=\(symbol)&num=\(count)"
+            guard let data = await fetchData(url, referer: "https://finance.sina.com.cn/") else { return [] }
+            return Array(Self.parseSinaDaily(data).suffix(count))
+        case nil:
+            return []
+        }
+    }
+
+    private func fetchData(_ urlString: String, referer: String) async -> Data? {
+        guard let url = URL(string: urlString) else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(referer, forHTTPHeaderField: "Referer")
+        return try? await session.data(for: request).0
+    }
+
+    /// `data.<code>.day` 或 `qfqday`：`[日期, 开, 收, 高, 低, 量]`
+    static func parseTencentDaily(_ data: Data, code: String) -> [GlobalIndexBar] {
+        guard
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let root = json["data"] as? [String: Any],
+            let node = root[code] as? [String: Any],
+            let rows = (node["qfqday"] ?? node["day"]) as? [[Any]]
+        else { return [] }
+        return rows.compactMap { row in
+            guard row.count >= 5,
+                  let date = dayDate("\(row[0])"),
+                  let o = Double("\(row[1])"), let c = Double("\(row[2])"),
+                  let h = Double("\(row[3])"), let l = Double("\(row[4])"),
+                  c > 0
+            else { return nil }
+            return GlobalIndexBar(date: date, open: o, high: h, low: l, close: c)
+        }
+    }
+
+    /// `result.data`：`[{d, o, h, l, c, v}]`，升序。
+    static func parseSinaDaily(_ data: Data) -> [GlobalIndexBar] {
+        guard
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let result = json["result"] as? [String: Any],
+            let rows = result["data"] as? [[String: Any]]
+        else { return [] }
+        return rows.compactMap { row in
+            func num(_ k: String) -> Double? { (row[k] as? String).flatMap(Double.init) ?? (row[k] as? Double) }
+            guard let d = row["d"] as? String, let date = dayDate(d),
+                  let o = num("o"), let h = num("h"), let l = num("l"), let c = num("c"), c > 0
+            else { return nil }
+            return GlobalIndexBar(date: date, open: o, high: h, low: l, close: c)
+        }
+    }
+
+    private static func dayDate(_ s: String) -> Date? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: s)
     }
 
     /// 拆出 `<prefix>code="body"` 形式的赋值语句。
