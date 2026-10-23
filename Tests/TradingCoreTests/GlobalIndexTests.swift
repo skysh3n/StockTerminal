@@ -41,8 +41,43 @@ final class GlobalIndexTests: XCTestCase {
         }
         XCTAssertEqual(history("usDJI"), .tencent("us.DJI"))
         XCTAssertEqual(history("hkHSI"), .tencent("hkHSI"))
+        XCTAssertEqual(history("sh000688"), .tencent("sh000688"))
         XCTAssertEqual(history("NKY"), .sina("NKY"))
         XCTAssertNil(history("SMI"))
+        let star = GlobalIndex.catalog.first { $0.id == "sh000688" }
+        XCTAssertEqual(star?.name, "科创50")
+        XCTAssertEqual(star?.tencentMinuteCode, "sh000688")
+    }
+
+    func testParseTencentMinute() {
+        let data = Data(#"""
+        {"code":0,"msg":"","data":{"sh000688":{"data":{"data":["0930 1287.87 59500","0931 1278.65 296133","1500 1345.51 10444456"],"date":"20261023"},"qt":{"sh000688":["1","科创50","000688","1345.51","1305.87","1287.87"]}}}}
+        """#.utf8)
+        let series = GlobalIndexClient.parseTencentMinute(data, code: "sh000688")
+        XCTAssertEqual(series.bars.count, 3)
+        XCTAssertEqual(series.bars.first?.close, 1287.87)
+        XCTAssertEqual(series.bars.last?.close, 1345.51)
+        XCTAssertEqual(series.preClose, 1305.87)
+    }
+
+    func testAggregateWeekMonth() {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd"
+        let daily: [GlobalIndexBar] = [
+            .init(date: f.date(from: "2026-10-19")!, open: 10, high: 12, low: 9, close: 11),
+            .init(date: f.date(from: "2026-10-20")!, open: 11, high: 13, low: 10, close: 12),
+            .init(date: f.date(from: "2026-10-21")!, open: 12, high: 14, low: 11, close: 13),
+            .init(date: f.date(from: "2026-11-03")!, open: 13, high: 15, low: 12, close: 14),
+        ]
+        let weeks = GlobalIndexClient.aggregate(daily, period: .week)
+        XCTAssertGreaterThanOrEqual(weeks.count, 2)
+        XCTAssertEqual(weeks.first?.open, 10)
+        let months = GlobalIndexClient.aggregate(daily, period: .month)
+        XCTAssertEqual(months.count, 2)
+        XCTAssertEqual(months[0].close, 13)
+        XCTAssertEqual(months[1].open, 13)
     }
 
     func testParseSinaIndices() {
@@ -93,10 +128,16 @@ final class GlobalIndexTests: XCTestCase {
         XCTAssertNotNil(quotes["NKY"])
 
         let client = GlobalIndexClient()
-        for id in ["usDJI", "NKY"] {
+        for id in ["usDJI", "NKY", "sh000688"] {
             let index = try XCTUnwrap(GlobalIndex.catalog.first { $0.id == id })
             let bars = await client.dailyHistory(for: index, count: 30)
             XCTAssertFalse(bars.isEmpty, "\(id) 应能取到日线")
         }
+
+        let star = try XCTUnwrap(GlobalIndex.catalog.first { $0.id == "sh000688" })
+        let minute = await client.minuteHistory(for: star)
+        XCTAssertFalse(minute.bars.isEmpty, "科创50 应能取到分时")
+        let week = await client.klineHistory(for: star, period: .week, count: 20)
+        XCTAssertFalse(week.isEmpty, "科创50 应能取到周K")
     }
 }

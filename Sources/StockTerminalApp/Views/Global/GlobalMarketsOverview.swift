@@ -80,9 +80,12 @@ struct GlobalMarketsOverview: View {
     }
 
     private func footer(_ store: GlobalMarketStore) -> some View {
-        HStack(spacing: 4) {
+        let open = store.indices.filter { $0.isTrading(at: store.now) }.count
+        return HStack(spacing: 4) {
             if let updated = store.lastUpdated {
-                Text("更新于 \(Fmt.clock(updated)) · 每 15 秒刷新 · 点击卡片查看详情")
+                Text(open > 0
+                     ? "更新于 \(Fmt.clock(updated)) · 交易中约 3 秒刷新 · 点击卡片查看分时/K线"
+                     : "更新于 \(Fmt.clock(updated)) · 休市约 20 秒刷新 · 点击卡片查看详情")
             } else if store.loading {
                 Text("正在获取全球行情…")
             } else {

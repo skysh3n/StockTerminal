@@ -29,9 +29,9 @@ public struct GlobalIndex: Sendable, Identifiable, Hashable {
     public let session: Session
 
     public enum HistorySource: Sendable, Hashable {
-        /// ifzq.gtimg.cn fqkline 代码；美股指数要写成 us.DJI
+        /// ifzq.gtimg.cn：A/港股 minute+fqkline；美股 UsMinute + fqkline（代码 us.DJI）
         case tencent(String)
-        /// gi.finance.sina.com.cn/hq/daily 的 symbol
+        /// 新浪全球日线；周/月由客户端聚合，分时暂无稳定免费源
         case sina(String)
     }
 
@@ -46,6 +46,17 @@ public struct GlobalIndex: Sendable, Identifiable, Hashable {
             guard !Self.sinaWithoutHistory.contains(code), code.hasPrefix("znb_") else { return nil }
             return .sina(String(code.dropFirst(4)))
         }
+    }
+
+    /// 腾讯分时接口用的代码（美股用 usDJI，不用 us.DJI）。
+    public var tencentMinuteCode: String? {
+        guard case .tencent(let code) = source else { return nil }
+        return code
+    }
+
+    public var isUSTencent: Bool {
+        if case .tencent(let code) = source { return code.hasPrefix("us") }
+        return false
     }
 
     /// 按常规时段与周一至周五判断，不含各地节假日。
@@ -73,6 +84,7 @@ public extension GlobalIndex {
         .init(id: "sh000001", name: "上证指数", market: "上海", region: .asia, source: .tencent("sh000001"), session: cn),
         .init(id: "sz399001", name: "深证成指", market: "深圳", region: .asia, source: .tencent("sz399001"), session: cn),
         .init(id: "sz399006", name: "创业板指", market: "深圳", region: .asia, source: .tencent("sz399006"), session: cn),
+        .init(id: "sh000688", name: "科创50", market: "上海", region: .asia, source: .tencent("sh000688"), session: cn),
         .init(id: "hkHSI", name: "恒生指数", market: "香港", region: .asia, source: .tencent("hkHSI"), session: hk),
         .init(id: "hkHSTECH", name: "恒生科技", market: "香港", region: .asia, source: .tencent("hkHSTECH"), session: hk),
         .init(id: "NKY", name: "日经225", market: "东京", region: .asia, source: .sina("znb_NKY"),
@@ -120,12 +132,34 @@ public struct GlobalIndexQuote: Sendable, Hashable {
     public let low: Double?
 }
 
-/// 指数日线（无成交量，部分市场接口不给）。
+/// 指数 K 线 / 分时点（分时用 open=high=low=close=当时价）。
 public struct GlobalIndexBar: Sendable, Hashable, Identifiable {
     public let date: Date
     public let open: Double
     public let high: Double
     public let low: Double
     public let close: Double
+    public let volume: Double?
     public var id: Date { date }
+
+    public init(date: Date, open: Double, high: Double, low: Double, close: Double, volume: Double? = nil) {
+        self.date = date
+        self.open = open
+        self.high = high
+        self.low = low
+        self.close = close
+        self.volume = volume
+    }
+}
+
+public struct GlobalMinuteSeries: Sendable, Hashable {
+    public let bars: [GlobalIndexBar]
+    public let preClose: Double?
+    public let date: Date?
+
+    public init(bars: [GlobalIndexBar], preClose: Double?, date: Date? = nil) {
+        self.bars = bars
+        self.preClose = preClose
+        self.date = date
+    }
 }
