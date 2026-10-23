@@ -140,15 +140,34 @@ public struct GlobalIndexBar: Sendable, Hashable, Identifiable {
     public let low: Double
     public let close: Double
     public let volume: Double?
+    public let turnover: Double?
     public var id: Date { date }
 
-    public init(date: Date, open: Double, high: Double, low: Double, close: Double, volume: Double? = nil) {
+    public init(
+        date: Date, open: Double, high: Double, low: Double, close: Double,
+        volume: Double? = nil, turnover: Double? = nil
+    ) {
         self.date = date
         self.open = open
         self.high = high
         self.low = low
         self.close = close
         self.volume = volume
+        self.turnover = turnover
+    }
+
+    /// 转成个股图表共用的 KLine，便于复用分时 / 蜡烛 / 指标组件。
+    public var asKLine: KLine {
+        let vol = volume ?? 0
+        return KLine(
+            timestamp: date,
+            open: Decimal(open),
+            high: Decimal(high),
+            low: Decimal(low),
+            close: Decimal(close),
+            volume: Int64(vol.rounded()),
+            turnover: Decimal(turnover ?? (vol * close))
+        )
     }
 }
 

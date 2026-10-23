@@ -71,46 +71,115 @@ struct CandleChartView: View {
 }
 
 /// 图表头部：双行结构——标题行（名称/标签 · 右侧大字现价与涨跌）+ 指标条（自适应宽度不裁切）
+/// 个股与全球指数共用同一套视觉。
 struct ChartHeader: View {
-    let state: SymbolState?
+    let name: String
+    let tags: [(text: String, color: Color)]
+    let lastPrice: Decimal?
+    let change: Decimal?
+    let changePercent: Double?
+    let open: Decimal?
+    let high: Decimal?
+    let low: Decimal?
+    let preClose: Decimal?
+    let amplitude: Double?
+    let volume: Int64?
+    let turnover: Decimal?
+    /// 标题行左侧额外内容（例如全球详情的返回按钮）
+    var leading: AnyView? = nil
+
+    init(state: SymbolState?) {
+        let q = state?.quote
+        self.name = state?.symbol.name ?? "--"
+        if let sym = state?.symbol {
+            self.tags = [
+                (sym.fullCode, .dsTextSecondary),
+                (sym.exchange.rawValue, .dsTextTertiary),
+            ]
+        } else {
+            self.tags = []
+        }
+        self.lastPrice = q?.lastPrice
+        self.change = q?.change
+        self.changePercent = q?.changePercent
+        self.open = q?.open
+        self.high = q?.high
+        self.low = q?.low
+        self.preClose = q?.preClose
+        self.amplitude = q?.amplitude
+        self.volume = q?.volume
+        self.turnover = q?.turnover
+        self.leading = nil
+    }
+
+    init(
+        name: String,
+        tags: [(String, Color)],
+        lastPrice: Decimal?,
+        change: Decimal?,
+        changePercent: Double?,
+        open: Decimal?,
+        high: Decimal?,
+        low: Decimal?,
+        preClose: Decimal?,
+        amplitude: Double?,
+        volume: Int64? = nil,
+        turnover: Decimal? = nil,
+        leading: AnyView? = nil
+    ) {
+        self.name = name
+        self.tags = tags.map { (text: $0.0, color: $0.1) }
+        self.lastPrice = lastPrice
+        self.change = change
+        self.changePercent = changePercent
+        self.open = open
+        self.high = high
+        self.low = low
+        self.preClose = preClose
+        self.amplitude = amplitude
+        self.volume = volume
+        self.turnover = turnover
+        self.leading = leading
+    }
 
     var body: some View {
-        let q = state?.quote
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .center, spacing: 12) {
                 HStack(spacing: 7) {
-                    Text(state?.symbol.name ?? "--")
+                    if let leading { leading }
+                    Text(name)
                         .font(.dsHeadline())
                         .tracking(-0.2)
                         .foregroundStyle(Color.dsTextPrimary)
-                    if let sym = state?.symbol {
-                        Tag(text: sym.fullCode, color: .dsTextSecondary)
-                        Tag(text: sym.exchange.rawValue, color: .dsTextTertiary)
+                    ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
+                        Tag(text: tag.text, color: tag.color)
                     }
                 }
 
                 Spacer(minLength: 10)
 
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(Fmt.price(q?.lastPrice))
+                    Text(Fmt.price(lastPrice))
                         .font(.system(size: 26, weight: .semibold).monospacedDigit())
                         .tracking(-0.5)
-                        .foregroundStyle(Sem.change(q?.changePercent))
-                    ChangeChip(text: Fmt.pct(q?.changePercent), color: Sem.change(q?.changePercent))
-                    Text(Fmt.signed(q?.change))
+                        .foregroundStyle(Sem.change(changePercent))
+                    ChangeChip(text: Fmt.pct(changePercent), color: Sem.change(changePercent))
+                    Text(Fmt.signed(change))
                         .font(.dsFootnote(medium: true))
-                        .foregroundStyle(Sem.change(q?.changePercent).opacity(0.9))
+                        .foregroundStyle(Sem.change(changePercent).opacity(0.9))
                 }
             }
 
             HStack(alignment: .center, spacing: 18) {
-                statItem("今开", Fmt.price(q?.open), Sem.price(q?.open, ref: q?.preClose))
-                statItem("最高", Fmt.price(q?.high), Sem.price(q?.high, ref: q?.preClose))
-                statItem("最低", Fmt.price(q?.low), Sem.price(q?.low, ref: q?.preClose))
-                statItem("昨收", Fmt.price(q?.preClose), .dsTextSecondary)
-                statItem("振幅", q.map { String(format: "%.2f%%", $0.amplitude) } ?? "--", .dsTextSecondary)
-                statItem("成交量", q.map { Fmt.volume(shares: $0.volume) } ?? "--", .dsTextSecondary)
-                statItem("成交额", Fmt.amount(q?.turnover), .dsTextSecondary)
+                statItem("今开", Fmt.price(open), Sem.price(open, ref: preClose))
+                statItem("最高", Fmt.price(high), Sem.price(high, ref: preClose))
+                statItem("最低", Fmt.price(low), Sem.price(low, ref: preClose))
+                statItem("昨收", Fmt.price(preClose), .dsTextSecondary)
+                statItem("振幅", amplitude.map { String(format: "%.2f%%", $0) } ?? "--", .dsTextSecondary)
+                if volume != nil || turnover != nil {
+                    statItem("成交量", volume.map { Fmt.volume(shares: $0) } ?? "--", .dsTextSecondary)
+                    statItem("成交额", Fmt.amount(turnover), .dsTextSecondary)
+                }
                 Spacer(minLength: 0)
             }
         }
@@ -135,17 +204,34 @@ struct ChartHeader: View {
     }
 }
 
-/// 周期 Tab（⌘1..⌘5）：分段控件中的内嵌浮起单元
+/// 周期 Tab（⌘1..⌘5）：分段控件中的内嵌浮起单元。个股与全球指数共用。
 struct TimeFrameTab: View {
-    let tf: TimeFrame
+    let label: String
     let index: Int
     let selected: Bool
     let action: () -> Void
+    var shortcut: Bool = true
     @State private var hovering = false
+
+    init(tf: TimeFrame, index: Int, selected: Bool, action: @escaping () -> Void) {
+        self.label = tf.label
+        self.index = index
+        self.selected = selected
+        self.action = action
+        self.shortcut = true
+    }
+
+    init(label: String, index: Int, selected: Bool, shortcut: Bool = false, action: @escaping () -> Void) {
+        self.label = label
+        self.index = index
+        self.selected = selected
+        self.action = action
+        self.shortcut = shortcut
+    }
 
     var body: some View {
         Button(action: action) {
-            Text(tf.label)
+            Text(label)
                 .font(.dsFootnote(medium: selected))
                 .tracking(0.2)
                 .foregroundStyle(selected ? Color.dsAccent
@@ -164,8 +250,23 @@ struct TimeFrameTab: View {
         }
         .buttonStyle(PressableStyle())
         .onHover { hovering = $0 }
-        .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
-        .help("\(tf.label)（⌘\(index + 1)）")
+        .modifier(OptionalCommandShortcut(enabled: shortcut, index: index, label: label))
+    }
+}
+
+private struct OptionalCommandShortcut: ViewModifier {
+    let enabled: Bool
+    let index: Int
+    let label: String
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+                .help("\(label)（⌘\(index + 1)）")
+        } else {
+            content.help(label)
+        }
     }
 }
 

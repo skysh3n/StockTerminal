@@ -149,7 +149,11 @@ public struct GlobalIndexClient: Sendable {
                   let date = minuteDate(day: dayToken, hm: String(parts[0]), timeZone: tz)
             else { return nil }
             let vol = parts.count >= 3 ? Double(parts[2]) : nil
-            return GlobalIndexBar(date: date, open: price, high: price, low: price, close: price, volume: vol)
+            let amt = parts.count >= 4 ? Double(parts[3]) : nil
+            return GlobalIndexBar(
+                date: date, open: price, high: price, low: price, close: price,
+                volume: vol, turnover: amt
+            )
         }
         return GlobalMinuteSeries(bars: bars, preClose: preClose)
     }
@@ -294,7 +298,8 @@ public struct GlobalIndexClient: Sendable {
                 high: bars.map(\.high).max() ?? last.high,
                 low: bars.map(\.low).min() ?? last.low,
                 close: last.close,
-                volume: bars.compactMap(\.volume).reduce(0, +)
+                volume: bars.compactMap(\.volume).reduce(0, +),
+                turnover: bars.compactMap(\.turnover).reduce(0, +)
             )
         }
     }
