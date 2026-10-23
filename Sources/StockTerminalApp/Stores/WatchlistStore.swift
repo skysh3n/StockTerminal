@@ -22,6 +22,8 @@ final class WatchlistStore {
     var selectedCode: String?
     var selectedTimeFrame: TimeFrame = .day
     var query: String = ""
+    /// 左栏正在看「全球」股指看板，而不是某个自选板块。
+    var showingGlobal = false
 
     let universeInitial: [Symbol]
     private(set) var universe: [Symbol]
@@ -139,6 +141,7 @@ final class WatchlistStore {
         let board = WatchBoard(id: UUID(), name: trimmed, system: false, codes: [])
         boards.append(board)
         activeBoardID = board.id
+        showingGlobal = false
         persist()
         return board.id
     }

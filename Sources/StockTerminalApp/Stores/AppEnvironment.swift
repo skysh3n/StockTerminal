@@ -24,6 +24,9 @@ final class AppEnvironment {
     private(set) var isReady = false
     private(set) var usingRealMarket = false
 
+    /// 全球股指只读看板，与模拟/真实行情无关，始终直连公开接口。
+    let globalMarkets = GlobalMarketStore()
+
     /// 仅在 `isReady` 之后由界面读取。
     var market: MarketStore { marketStore! }
     var watchlist: WatchlistStore { watchlistStore! }
@@ -121,6 +124,7 @@ final class AppEnvironment {
     /// 切换当前板块，并为还没有快照的股票补行情。
     func showBoard(_ id: UUID) {
         guard isReady else { return }
+        watchlist.showingGlobal = false
         watchlist.activate(id)
         let symbols = watchlist.codes.compactMap { watchlist.symbol(for: $0) }
         market.prepareSymbols(symbols)
@@ -139,6 +143,7 @@ final class AppEnvironment {
     /// 搜索结果加入当前板块并选中：建档、扩展行情订阅、切换图表。
     func addToWatchlistAndSelect(_ symbol: Symbol) {
         guard isReady else { return }
+        watchlist.showingGlobal = false
         watchlist.register(symbol)
         watchlist.add(symbol.fullCode)
         market.ensureSymbol(symbol)
