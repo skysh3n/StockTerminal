@@ -2,7 +2,7 @@ import SwiftUI
 import DesignSystem
 import TradingCore
 
-/// 左栏：自选股列表（实时跳动 + 行内缩浮层 hover + 价格闪烁 + 右键删除）
+/// 左栏：自选股 / 市场榜单（实时跳动 + 行内缩浮层 hover + 价格闪烁 + 右键删除）
 struct WatchlistPanel: View {
     @Environment(AppEnvironment.self) private var env
     @State private var showCreate = false
@@ -13,52 +13,24 @@ struct WatchlistPanel: View {
     var body: some View {
         @Bindable var wl = env.watchlist
         VStack(spacing: 0) {
-            PanelHeader(wl.activeBoard?.name ?? "自选") {
-                Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
-            }
-            boardStrip
-            Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
-
-            // 列头
-            HStack(spacing: 6) {
-                Text("代码 / 名称").tracking(0.3)
-                Spacer(minLength: 2)
-                Text("现价").tracking(0.3).frame(width: 66, alignment: .trailing)
-                Text("涨跌幅").tracking(0.3).frame(width: 62, alignment: .trailing)
-            }
-            .font(.dsMicro())
-            .foregroundStyle(Color.dsTextTertiary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 4)
-
-            if wl.codes.isEmpty {
-                Spacer(minLength: 0)
-                VStack(spacing: 6) {
-                    Text("这个板块还没有股票")
-                        .font(.dsFootnote(medium: true))
-                        .foregroundStyle(Color.dsTextSecondary)
-                    Text("搜索代码或名称，回车加入当前板块")
-                        .font(.dsMicro())
-                        .foregroundStyle(Color.dsTextTertiary)
-                        .multilineTextAlignment(.center)
+            PanelHeader(headerTitle) {
+                if wl.listMode == .watchlist {
+                    Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
+                } else if env.marketBoard.rankingLoading {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Tag(text: "\(env.marketBoard.ranking.count)", color: .dsTextSecondary)
                 }
-                .padding(.horizontal, 18)
-                Spacer(minLength: 0)
+            }
+            modeStrip
+            if wl.listMode == .watchlist {
+                boardStrip
+                Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
+                watchlistColumns
+                watchlistBody
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 1) {
-                        ForEach(wl.codes, id: \.self) { code in
-                            if let state = env.market.states[code] {
-                                WatchlistRow(state: state, selected: wl.selectedCode == code)
-                                    .padding(.horizontal, 6)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { wl.select(code) }
-                                    .contextMenu { rowMenu(code: code, boards: wl.boards) }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
+                Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
+                RankListPanel()
             }
         }
         .popover(isPresented: $showCreate, arrowEdge: .bottom) { namePopover(creating: true) }
@@ -73,8 +45,74 @@ struct WatchlistPanel: View {
         }
     }
 
+    private var headerTitle: String {
+        switch env.watchlist.listMode {
+        case .watchlist: return env.watchlist.activeBoard?.name ?? "自选"
+        case .gainers: return "涨幅榜"
+        case .losers: return "跌幅榜"
+        case .turnover: return "成交额榜"
+        }
+    }
+
     private var renamePresented: Binding<Bool> {
         Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })
+    }
+
+    private var modeStrip: some View {
+        HStack(spacing: 2) {
+            ForEach(WatchlistMode.allCases) { mode in
+                let active = env.watchlist.listMode == mode
+                Button {
+                    env.setListMode(mode)
+                } label: {
+                    Text(mode.label)
+                        .font(.dsMicro(medium: active))
+                        .foregroundStyle(active ? Color.dsAccent : Color.dsTextTertiary)
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(active ? Color.dsAccent.opacity(0.14) : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+            if env.watchlist.listMode == .watchlist {
+                Menu {
+                    ForEach(WatchlistSort.allCases, id: \.self) { s in
+                        Button(s.label) { env.watchlist.sort = s }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.dsTextSecondary)
+                        .frame(width: 22, height: 22)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.dsElevated.opacity(0.8)))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.6))
+                }
+                .menuStyle(.borderlessButton)
+                .help("排序：\(env.watchlist.sort.label)")
+            } else {
+                Button {
+                    if let kind = env.watchlist.listMode.rankKind {
+                        Task { await env.marketBoard.refreshRanking(kind: kind) }
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.dsTextSecondary)
+                        .frame(width: 22, height: 22)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.dsElevated.opacity(0.8)))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.6))
+                }
+                .buttonStyle(.plain)
+                .help("刷新榜单")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 4)
     }
 
     private var boardStrip: some View {
@@ -136,6 +174,60 @@ struct WatchlistPanel: View {
         }
     }
 
+    private var watchlistColumns: some View {
+        HStack(spacing: 6) {
+            Text("代码 / 名称").tracking(0.3)
+            Spacer(minLength: 2)
+            Text("现价").tracking(0.3).frame(width: 58, alignment: .trailing)
+            Text("涨跌幅").tracking(0.3).frame(width: 56, alignment: .trailing)
+            Text("额").tracking(0.3).frame(width: 48, alignment: .trailing)
+        }
+        .font(.dsMicro())
+        .foregroundStyle(Color.dsTextTertiary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var watchlistBody: some View {
+        let wl = env.watchlist
+        let codes = wl.sortedCodes { env.market.states[$0]?.quote }
+        if codes.isEmpty {
+            Spacer(minLength: 0)
+            VStack(spacing: 6) {
+                Text("这个板块还没有股票")
+                    .font(.dsFootnote(medium: true))
+                    .foregroundStyle(Color.dsTextSecondary)
+                Text("搜索代码或名称，回车加入当前板块")
+                    .font(.dsMicro())
+                    .foregroundStyle(Color.dsTextTertiary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 18)
+            Spacer(minLength: 0)
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 1) {
+                    ForEach(codes, id: \.self) { code in
+                        if let state = env.market.states[code] {
+                            WatchlistRow(state: state, selected: wl.selectedCode == code)
+                                .padding(.horizontal, 6)
+                                .contentShape(Rectangle())
+                                .onTapGesture { wl.select(code) }
+                                .contextMenu {
+                                    rowMenu(code: code, boards: wl.boards)
+                                    Divider()
+                                    Button("设涨破预警…") { addAlert(code: code, direction: .above) }
+                                    Button("设跌破预警…") { addAlert(code: code, direction: .below) }
+                                }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
     @ViewBuilder
     private func rowMenu(code: String, boards: [WatchBoard]) -> some View {
         let others = boards.filter { $0.id != env.watchlist.activeBoardID }
@@ -152,6 +244,28 @@ struct WatchlistPanel: View {
             }
         }
         Button("移出本板块", role: .destructive) { env.watchlist.remove(code) }
+    }
+
+    private func addAlert(code: String, direction: PriceAlertDirection) {
+        guard let state = env.market.states[code], let q = state.quote else { return }
+        let bump = q.lastPrice * Decimal(string: "0.02")!
+        let threshold: Decimal = {
+            switch direction {
+            case .above: return q.lastPrice + bump
+            case .below: return max(q.lastPrice - bump, Decimal(string: "0.01")!)
+            }
+        }()
+        if env.alerts.add(
+            symbol: code,
+            name: state.symbol.name,
+            direction: direction,
+            threshold: threshold
+        ) {
+            env.trading.showToast(
+                "已设预警：\(state.symbol.name) \(direction.label) \(Fmt.price(threshold))",
+                isError: false
+            )
+        }
     }
 
     private func namePopover(creating: Bool) -> some View {
@@ -222,10 +336,16 @@ struct WatchlistRow: View {
                     .font(.dsMicro())
                     .foregroundStyle(changeColor.opacity(0.8))
             }
-            .frame(width: 66, alignment: .trailing)
+            .frame(width: 58, alignment: .trailing)
 
             ChangeChip(text: Fmt.pct(q?.changePercent), color: changeColor, compact: true)
-                .frame(width: 62, alignment: .trailing)
+                .frame(width: 56, alignment: .trailing)
+
+            Text(Fmt.amount(q?.turnover))
+                .font(.dsMicro())
+                .foregroundStyle(Color.dsTextTertiary)
+                .frame(width: 48, alignment: .trailing)
+                .lineLimit(1)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -236,8 +356,6 @@ struct WatchlistRow: View {
             guard let o = old, let n = new, o != n else { return }
             flashUp = n > o
             flashOpacity = 0.30
-            // 瞬时点亮→熄灭（真实终端的闪烁做法）：每次变动只触发两次重绘，
-            // 不用持续动画——避免 12 行 × 4Hz 的隐式动画把渲染循环钉满 60fps
             flashTask?.cancel()
             flashTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(200))

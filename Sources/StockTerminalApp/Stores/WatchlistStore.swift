@@ -10,6 +10,51 @@ struct WatchBoard: Identifiable, Hashable {
     var codes: [String]
 }
 
+/// 左栏列表模式：自选板块 或 全市场榜单。
+enum WatchlistMode: String, CaseIterable, Identifiable {
+    case watchlist
+    case gainers
+    case losers
+    case turnover
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .watchlist: return "自选"
+        case .gainers: return "涨幅"
+        case .losers: return "跌幅"
+        case .turnover: return "成交额"
+        }
+    }
+
+    var rankKind: MarketRankKind? {
+        switch self {
+        case .watchlist: return nil
+        case .gainers: return .gainers
+        case .losers: return .losers
+        case .turnover: return .turnover
+        }
+    }
+}
+
+/// 自选列表排序。
+enum WatchlistSort: String, CaseIterable {
+    case manual
+    case changeDesc
+    case changeAsc
+    case priceDesc
+
+    var label: String {
+        switch self {
+        case .manual: return "默认"
+        case .changeDesc: return "涨幅↓"
+        case .changeAsc: return "涨幅↑"
+        case .priceDesc: return "现价↓"
+        }
+    }
+}
+
 /// 自选与自定义板块、当前标的/周期、搜索词。
 /// 持久化到 Application Support/StockTerminal/boards.json。
 /// 旧版 watchlist.json 会在首次启动时迁入「自选」。
@@ -22,6 +67,8 @@ final class WatchlistStore {
     var selectedCode: String?
     var selectedTimeFrame: TimeFrame = .day
     var query: String = ""
+    var listMode: WatchlistMode = .watchlist
+    var sort: WatchlistSort = .manual
 
     let universeInitial: [Symbol]
     private(set) var universe: [Symbol]
@@ -29,8 +76,23 @@ final class WatchlistStore {
 
     var activeBoard: WatchBoard? { boards.first { $0.id == activeBoardID } }
 
-    /// 当前板块里的代码。
+    /// 当前板块里的代码（未排序）。
     var codes: [String] { activeBoard?.codes ?? [] }
+
+    /// 按当前排序规则返回代码（需传入现价回调）。
+    func sortedCodes(quote: (String) -> Quote?) -> [String] {
+        let base = codes
+        switch sort {
+        case .manual:
+            return base
+        case .changeDesc:
+            return base.sorted { (quote($0)?.changePercent ?? -999) > (quote($1)?.changePercent ?? -999) }
+        case .changeAsc:
+            return base.sorted { (quote($0)?.changePercent ?? 999) < (quote($1)?.changePercent ?? 999) }
+        case .priceDesc:
+            return base.sorted { (quote($0)?.lastPrice ?? 0) > (quote($1)?.lastPrice ?? 0) }
+        }
+    }
 
     init(universe: [Symbol], defaultWatchlist: [String] = []) {
         self.universeInitial = universe

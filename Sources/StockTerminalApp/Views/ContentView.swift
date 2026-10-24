@@ -53,46 +53,52 @@ struct ContentView: View {
     }
 
     private var tradingWorkspace: some View {
-        GeometryReader { geo in
-            // 中间栏吃剩余宽度，避免 left+mid+right 算出来超过总宽导致 HStack 互相挤压抖动。
-            let gap: CGFloat = 5
-            let midMin: CGFloat = 420
-            let usable = max(geo.size.width - gap * 2, midMin + 200 + 260)
-            let leftMax = min(420, max(200, usable - midMin - layout.rightWidth))
-            let rightMax = min(440, max(260, usable - midMin - layout.leftWidth))
-            let left = LayoutStore.clamp(layout.leftWidth, 200...leftMax)
-            let right = LayoutStore.clamp(layout.rightWidth, 260...rightMax)
+        VStack(spacing: 0) {
+            IndexStrip()
+            GeometryReader { geo in
+                // 中间栏吃剩余宽度，避免 left+mid+right 算出来超过总宽导致 HStack 互相挤压抖动。
+                let gap: CGFloat = 5
+                let midMin: CGFloat = 420
+                let usable = max(geo.size.width - gap * 2, midMin + 200 + 260)
+                let leftMax = min(420, max(200, usable - midMin - layout.rightWidth))
+                let rightMax = min(440, max(260, usable - midMin - layout.leftWidth))
+                let left = LayoutStore.clamp(layout.leftWidth, 200...leftMax)
+                let right = LayoutStore.clamp(layout.rightWidth, 260...rightMax)
 
-            HStack(spacing: 0) {
-                WatchlistPanel()
-                    .terminalCard()
-                    .padding(.leading, 8)
-                    .padding(.vertical, 8)
-                    .frame(width: left)
-                    .clipped()
+                HStack(spacing: 0) {
+                    WatchlistPanel()
+                        .terminalCard()
+                        .padding(.leading, 8)
+                        .padding(.vertical, 8)
+                        .frame(width: left)
+                        .clipped()
 
-                WidthDragDivider(
-                    width: $layout.leftWidth,
-                    sign: 1,
-                    range: 200...leftMax,
-                    onSave: { layout.scheduleSave() }
-                )
+                    WidthDragDivider(
+                        width: $layout.leftWidth,
+                        sign: 1,
+                        range: 200...leftMax,
+                        onSave: { layout.scheduleSave() }
+                    )
 
-                centerColumn
-                    .frame(maxWidth: .infinity)
-                    .clipped()
+                    centerColumn
+                        .frame(maxWidth: .infinity)
+                        .clipped()
 
-                WidthDragDivider(
-                    width: $layout.rightWidth,
-                    sign: -1,
-                    range: 260...rightMax,
-                    onSave: { layout.scheduleSave() }
-                )
+                    WidthDragDivider(
+                        width: $layout.rightWidth,
+                        sign: -1,
+                        range: 260...rightMax,
+                        onSave: { layout.scheduleSave() }
+                    )
 
-                rightColumn
-                    .frame(width: right)
-                    .clipped()
+                    rightColumn
+                        .frame(width: right)
+                        .clipped()
+                }
             }
+        }
+        .onChange(of: env.alerts.pendingToast) { _, new in
+            if new != nil { env.drainAlertToast() }
         }
     }
 

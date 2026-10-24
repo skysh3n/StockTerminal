@@ -119,7 +119,7 @@ final class TradingStore {
         if trades.count > 300 { trades.removeLast(trades.count - 300) }
     }
 
-    private func showToast(_ text: String, isError: Bool) {
+    func showToast(_ text: String, isError: Bool = false) {
         toastSeq += 1
         let seq = toastSeq
         toast = ToastMessage(text: text, isError: isError)

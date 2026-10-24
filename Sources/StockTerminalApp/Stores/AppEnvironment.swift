@@ -30,6 +30,12 @@ final class AppEnvironment {
 
     /// 全球股指只读看板，与模拟/真实行情无关，始终直连公开接口。
     let globalMarkets = GlobalMarketStore()
+    /// A 股指数条 + 涨跌幅/成交额榜。
+    let marketBoard = MarketBoardStore()
+    /// 本地价格预警。
+    let alerts = AlertStore()
+    /// 选中标的公告。
+    let notices = NoticeStore()
 
     /// 仅在 `isReady` 之后由界面读取。
     var market: MarketStore { marketStore! }
@@ -98,6 +104,16 @@ final class AppEnvironment {
         watchlistStore = watchlist
         tradingStore = trading
         portfolioStore = portfolio
+
+        // 指数条 / 榜单 / 预警 / 公告：看盘补充能力
+        market.prepareSymbols(AShareIndices.all)
+        marketBoard.start(usingRealMarket: usingRealMarket, market: market)
+        notices.configure(usingRealMarket: usingRealMarket)
+        alerts.start(market: market)
+        if let code = watchlist.selectedCode {
+            notices.load(for: code)
+        }
+
         isReady = true
     }
 
@@ -107,8 +123,36 @@ final class AppEnvironment {
               let code = watchlist.selectedCode,
               let sym = watchlist.symbol(for: code) else { return }
         syncDraft(code: code, name: sym.name)
+        notices.load(for: code)
         let tf = watchlist.selectedTimeFrame
         Task { await self.market.select(symbol: sym, timeFrame: tf) }
+    }
+
+    /// 左栏切到榜单模式时刷新对应榜。
+    func setListMode(_ mode: WatchlistMode) {
+        guard isReady else { return }
+        watchlist.listMode = mode
+        if let kind = mode.rankKind {
+            Task { await marketBoard.refreshRanking(kind: kind) }
+        }
+    }
+
+    /// 从榜单/指数选中：建档、订阅、切图（与搜索加入同源）。
+    func selectMarketSymbol(_ symbol: Symbol, addToWatchlist: Bool = false) {
+        guard isReady else { return }
+        workspace = .trading
+        watchlist.register(symbol)
+        if addToWatchlist { watchlist.add(symbol.fullCode) }
+        market.ensureSymbol(symbol)
+        watchlist.select(symbol.fullCode)
+        selectionChanged()
+    }
+
+    /// 消费预警 toast（合并进交易 toast 通道，避免两套顶栏提示）。
+    func drainAlertToast() {
+        guard let text = alerts.pendingToast else { return }
+        alerts.pendingToast = nil
+        trading.showToast(text, isError: false)
     }
 
     /// 全市场搜索。真实模式走东财 suggest，模拟模式过滤内置股票池。

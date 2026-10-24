@@ -1,8 +1,9 @@
 import SwiftUI
+import AppKit
 import DesignSystem
 import TradingCore
 
-/// 中栏下方：持仓 / 委托 / 成交 三 Tab 表格
+/// 中栏下方：持仓 / 委托 / 成交 / 公告 / 预警
 struct BottomTabs: View {
     @Environment(AppEnvironment.self) private var env
     @State private var tab: BottomTab = .positions
@@ -11,6 +12,8 @@ struct BottomTabs: View {
         case positions = "持仓"
         case orders = "委托"
         case trades = "成交"
+        case notices = "公告"
+        case alerts = "预警"
         var id: String { rawValue }
     }
 
@@ -21,7 +24,9 @@ struct BottomTabs: View {
                     tabButton(t)
                 }
                 Spacer()
-                summary
+                if tab == .positions || tab == .orders || tab == .trades {
+                    summary
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -33,6 +38,8 @@ struct BottomTabs: View {
                 case .positions: PositionsTable()
                 case .orders: OrdersTable()
                 case .trades: TradesTable()
+                case .notices: NoticesTable()
+                case .alerts: AlertsTable()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -47,10 +54,15 @@ struct BottomTabs: View {
             case .positions: return env.portfolio.positions.count
             case .orders: return env.trading.orders.count
             case .trades: return env.trading.trades.count
+            case .notices: return env.notices.items.count
+            case .alerts: return env.alerts.alerts.count
             }
         }()
         Button {
             tab = t
+            if t == .notices {
+                env.notices.load(for: env.watchlist.selectedCode)
+            }
         } label: {
             HStack(spacing: 5) {
                 Text(t.rawValue)
@@ -333,6 +345,222 @@ private struct TradeRow: View {
             cell(Fmt.money(trade.amount), 82, .trailing, .dsTextSecondary)
             cell(Fmt.price(trade.fee), 56, .trailing, .dsTextTertiary)
             Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .rowHover(radius: 5)
+        .padding(.horizontal, 4)
+    }
+}
+
+// MARK: - 公告
+
+struct NoticesTable: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        let store = env.notices
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                headerCell("日期", 78, .leading)
+                headerCell("标题", 320, .leading)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+
+            Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
+
+            if store.loading && store.items.isEmpty {
+                EmptyHint(text: "加载公告…")
+            } else if store.items.isEmpty {
+                EmptyHint(text: store.error ?? "选择股票后查看公告")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 1) {
+                        ForEach(store.items) { n in
+                            NoticeRow(notice: n)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+        }
+    }
+}
+
+private struct NoticeRow: View {
+    let notice: StockNotice
+
+    var body: some View {
+        Button {
+            if let url = notice.url {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 0) {
+                cell(notice.noticeDate, 78, .leading, .dsTextTertiary)
+                Text(notice.title)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(notice.url == nil ? Color.dsTextSecondary : Color.dsTextPrimary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if notice.url != nil {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Color.dsTextTertiary)
+                        .padding(.trailing, 4)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(notice.url == nil)
+        .rowHover(radius: 5)
+        .padding(.horizontal, 4)
+        .help(notice.url == nil ? notice.title : "在浏览器打开公告")
+    }
+}
+
+// MARK: - 预警
+
+struct AlertsTable: View {
+    @Environment(AppEnvironment.self) private var env
+    @State private var draftDirection: PriceAlertDirection = .above
+    @State private var draftThreshold = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            alertComposer
+            Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
+
+            HStack(spacing: 0) {
+                headerCell("标的", 120, .leading)
+                headerCell("条件", 56, .center)
+                headerCell("阈值", 72, .trailing)
+                headerCell("状态", 56, .center)
+                Spacer(minLength: 8)
+                headerCell("操作", 88, .center)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+
+            Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
+
+            if env.alerts.alerts.isEmpty {
+                EmptyHint(text: "暂无预警 — 在自选行右键或下方为当前标的添加")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 1) {
+                        ForEach(env.alerts.alerts) { a in
+                            AlertRow(alert: a)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+        }
+    }
+
+    private var alertComposer: some View {
+        let code = env.watchlist.selectedCode
+        let name = code.flatMap { env.watchlist.symbol(for: $0)?.name } ?? "--"
+        let ref = code.flatMap { env.market.states[$0]?.quote?.lastPrice }
+        return HStack(spacing: 8) {
+            Text(name)
+                .font(.dsFootnote(medium: true))
+                .foregroundStyle(Color.dsTextPrimary)
+                .lineLimit(1)
+                .frame(width: 72, alignment: .leading)
+            Picker("", selection: $draftDirection) {
+                Text("涨破").tag(PriceAlertDirection.above)
+                Text("跌破").tag(PriceAlertDirection.below)
+            }
+            .labelsHidden()
+            .frame(width: 72)
+            TextField(ref.map { Fmt.price($0) } ?? "价格", text: $draftThreshold)
+                .textFieldStyle(.plain)
+                .font(.dsFootnote())
+                .foregroundStyle(Color.dsTextPrimary)
+                .padding(.horizontal, 8)
+                .frame(width: 88, height: 24)
+                .inputBox(focused: false)
+            Button("添加预警") { commitAlert(code: code, name: name) }
+                .buttonStyle(.plain)
+                .font(.dsMicro(medium: true))
+                .foregroundStyle(Color.dsAccent)
+                .disabled(code == nil)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .onChange(of: code) { _, _ in
+            if let ref { draftThreshold = Fmt.price(ref) }
+        }
+        .onAppear {
+            if draftThreshold.isEmpty, let ref { draftThreshold = Fmt.price(ref) }
+        }
+    }
+
+    private func commitAlert(code: String?, name: String) {
+        guard let code else { return }
+        let cleaned = draftThreshold.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: ",", with: "")
+        guard let threshold = Decimal(string: cleaned), threshold > 0 else {
+            env.trading.showToast("请输入有效价格", isError: true)
+            return
+        }
+        if env.alerts.add(symbol: code, name: name, direction: draftDirection, threshold: threshold) {
+            env.trading.showToast("已添加预警", isError: false)
+        }
+    }
+}
+
+private struct AlertRow: View {
+    @Environment(AppEnvironment.self) private var env
+    let alert: PriceAlert
+
+    var body: some View {
+        let status: (String, Color) = {
+            if let _ = alert.triggeredAt { return ("已触发", Color.dsWarning) }
+            if !alert.enabled { return ("关闭", Color.dsTextTertiary) }
+            return ("监视中", Color.dsDown)
+        }()
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(alert.name)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.dsTextPrimary)
+                    .lineLimit(1)
+                Text(alert.symbol)
+                    .font(.dsMicro())
+                    .foregroundStyle(Color.dsTextTertiary)
+            }
+            .frame(width: 120, alignment: .leading)
+            cell(alert.direction.label, 56, .center, .dsTextSecondary, medium: true)
+            cell(Fmt.price(alert.threshold), 72, .trailing, .dsTextPrimary)
+            cell(status.0, 56, .center, status.1, medium: true)
+            Spacer(minLength: 8)
+            HStack(spacing: 4) {
+                if alert.triggeredAt != nil {
+                    Button("重置") { env.alerts.reset(alert.id) }
+                        .buttonStyle(PressableStyle())
+                        .font(.dsMicro(medium: true))
+                        .foregroundStyle(Color.dsAccent)
+                } else {
+                    Button(alert.enabled ? "暂停" : "开启") { env.alerts.toggle(alert.id) }
+                        .buttonStyle(PressableStyle())
+                        .font(.dsMicro(medium: true))
+                        .foregroundStyle(Color.dsTextSecondary)
+                }
+                Button("删除", role: .destructive) { env.alerts.remove(alert.id) }
+                    .buttonStyle(PressableStyle())
+                    .font(.dsMicro(medium: true))
+                    .foregroundStyle(Color.dsUp)
+            }
+            .frame(width: 88)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
