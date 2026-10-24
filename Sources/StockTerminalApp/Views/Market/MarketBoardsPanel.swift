@@ -2,7 +2,7 @@ import SwiftUI
 import DesignSystem
 import TradingCore
 
-/// 「榜单」工作区左栏：涨跌幅/成交额/行业/概念/涨停/龙虎榜。与自选完全分离。
+/// 「榜单」工作区左栏：涨跌幅/成交额/涨停/龙虎榜。与自选完全分离。
 struct MarketBoardsPanel: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -17,8 +17,6 @@ struct MarketBoardsPanel: View {
             switch board.listMode {
             case .gainers, .losers, .turnover, .turnoverRate, .amplitude:
                 RankListPanel()
-            case .industry, .concept:
-                SectorListPanel()
             case .limitUp:
                 LimitUpListPanel()
             case .limitDown:
@@ -30,17 +28,12 @@ struct MarketBoardsPanel: View {
     }
 
     private var headerTitle: String {
-        let board = env.marketBoard
-        switch board.listMode {
+        switch env.marketBoard.listMode {
         case .gainers: return "涨幅榜"
         case .losers: return "跌幅榜"
         case .turnover: return "成交额榜"
         case .turnoverRate: return "换手榜"
         case .amplitude: return "振幅榜"
-        case .industry:
-            return board.activeSector.map { "行业 · \($0.name)" } ?? "行业板块"
-        case .concept:
-            return board.activeSector.map { "概念 · \($0.name)" } ?? "概念板块"
         case .limitUp: return "涨停池"
         case .limitDown: return "跌停池"
         case .billboard: return "龙虎榜"
@@ -51,7 +44,6 @@ struct MarketBoardsPanel: View {
     private var headerTrailing: some View {
         let board = env.marketBoard
         if (board.listMode.isStockRanking && board.rankingLoading)
-            || (board.listMode.isSectorMode && board.sectorLoading)
             || (board.listMode.isLimitUp && board.limitUpLoading)
             || (board.listMode.isLimitDown && board.limitDownLoading)
             || (board.listMode.isBillboard && board.billboardLoading) {
@@ -60,8 +52,6 @@ struct MarketBoardsPanel: View {
             let n: Int = {
                 switch board.listMode {
                 case .gainers, .losers, .turnover, .turnoverRate, .amplitude: return board.ranking.count
-                case .industry, .concept:
-                    return board.activeSector == nil ? board.sectors.count : board.sectorConstituents.count
                 case .limitUp: return board.limitUp.count
                 case .limitDown: return board.limitDown.count
                 case .billboard: return board.billboard.count
@@ -113,12 +103,7 @@ struct MarketBoardsPanel: View {
     }
 
     private func refresh() {
-        let mode = env.marketBoard.listMode
-        if let active = env.marketBoard.activeSector, mode.isSectorMode {
-            Task { await env.marketBoard.openSector(active) }
-        } else {
-            Task { await env.marketBoard.applyMode(mode) }
-        }
+        Task { await env.marketBoard.applyMode(env.marketBoard.listMode) }
     }
 }
 

@@ -45,12 +45,17 @@ public struct EastmoneyBillboardClient: Sendable {
         else {
             throw ServiceError.backend("龙虎榜解析失败")
         }
+        // 东财 DETAILS 同一标的常因多席位/多理由重复出现；id 为 code-date，
+        // 重复 Identifiable 会让 LazyVStack 中间留白。按净买额已排序，每码只留首条。
         var out: [BillboardEntry] = []
+        var seen = Set<String>()
         for row in rows {
             guard let code = row["SECURITY_CODE"] as? String, code.count == 6,
                   let name = row["SECURITY_NAME_ABBR"] as? String,
                   let exchange = RealMarketDataService.exchange(forCode: code)
             else { continue }
+            if seen.contains(code) { continue }
+            seen.insert(code)
             let price = decimalValue(row["CLOSE_PRICE"])
             let pct = doubleValue(row["CHANGE_RATE"])
             let net = decimalValue(row["BILLBOARD_NET_AMT"])

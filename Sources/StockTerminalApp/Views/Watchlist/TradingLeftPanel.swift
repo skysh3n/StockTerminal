@@ -73,8 +73,6 @@ struct TradingLeftPanel: View {
         let b = env.marketBoard
         switch b.listMode {
         case .gainers, .losers, .turnover, .turnoverRate, .amplitude: return b.ranking.count
-        case .industry, .concept:
-            return b.activeSector == nil ? b.sectors.count : b.sectorConstituents.count
         case .limitUp: return b.limitUp.count
         case .limitDown: return b.limitDown.count
         case .billboard: return b.billboard.count
@@ -94,8 +92,6 @@ struct LeftBoardsPanel: View {
             switch board.listMode {
             case .gainers, .losers, .turnover, .turnoverRate, .amplitude:
                 RankListPanel()
-            case .industry, .concept:
-                SectorListPanel()
             case .limitUp:
                 LimitUpListPanel()
             case .limitDown:

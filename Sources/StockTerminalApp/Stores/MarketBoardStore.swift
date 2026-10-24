@@ -9,8 +9,6 @@ enum BoardListMode: String, CaseIterable, Identifiable {
     case turnover
     case turnoverRate
     case amplitude
-    case industry
-    case concept
     case limitUp
     case limitDown
     case billboard
@@ -24,8 +22,6 @@ enum BoardListMode: String, CaseIterable, Identifiable {
         case .turnover: return "成交额"
         case .turnoverRate: return "换手"
         case .amplitude: return "振幅"
-        case .industry: return "行业"
-        case .concept: return "概念"
         case .limitUp: return "涨停"
         case .limitDown: return "跌停"
         case .billboard: return "龙虎榜"
@@ -43,16 +39,7 @@ enum BoardListMode: String, CaseIterable, Identifiable {
         }
     }
 
-    var sectorKind: SectorKind? {
-        switch self {
-        case .industry: return .industry
-        case .concept: return .concept
-        default: return nil
-        }
-    }
-
     var isStockRanking: Bool { rankKind != nil }
-    var isSectorMode: Bool { sectorKind != nil }
     var isLimitUp: Bool { self == .limitUp }
     var isLimitDown: Bool { self == .limitDown }
     var isBillboard: Bool { self == .billboard }
@@ -151,8 +138,6 @@ final class MarketBoardStore {
             await refreshRanking(kind: kind)
             ranking = items(for: kind)
             rankingLoading = false
-        } else if let sk = mode.sectorKind {
-            await refreshSectors(kind: sk)
         } else if mode.isLimitUp {
             await refreshLimitUp()
         } else if mode.isLimitDown {
@@ -207,15 +192,11 @@ final class MarketBoardStore {
 
     func refreshSectors(kind: SectorKind) async {
         sectorKind = kind
-        if listMode.sectorKind == kind {
-            activeSector = nil
-            sectorConstituents = []
-            sectorLoading = true
-            sectorError = nil
-        }
-        defer {
-            if listMode.sectorKind == kind { sectorLoading = false }
-        }
+        activeSector = nil
+        sectorConstituents = []
+        sectorLoading = true
+        sectorError = nil
+        defer { sectorLoading = false }
 
         var loaded: [SectorBoard] = []
         if usingReal {
@@ -229,11 +210,9 @@ final class MarketBoardStore {
                     case .concept:
                         loaded = try await sinaSector.conceptSectors(limit: 16)
                     }
-                    if loaded.isEmpty, listMode.sectorKind == kind {
-                        sectorError = "板块暂时不可用"
-                    }
+                    if loaded.isEmpty { sectorError = "板块暂时不可用" }
                 } catch {
-                    if listMode.sectorKind == kind { sectorError = "板块暂时不可用" }
+                    sectorError = "板块暂时不可用"
                     loaded = mockSectors(kind: kind)
                 }
             }
@@ -245,9 +224,7 @@ final class MarketBoardStore {
         case .industry: industrySectors = loaded
         case .concept: conceptSectors = loaded
         }
-        if sectorKind == kind {
-            sectors = loaded
-        }
+        sectors = loaded
     }
 
     func openSector(_ board: SectorBoard) async {

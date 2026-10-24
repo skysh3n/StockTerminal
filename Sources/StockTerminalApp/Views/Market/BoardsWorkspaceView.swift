@@ -5,7 +5,6 @@ import TradingCore
 /// 「榜单」全屏工作区：多榜分块，块内可滚动；点股票进个股详情，可加自选。
 struct BoardsWorkspaceView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var sectorSheet: SectorBoard?
 
     private let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -54,8 +53,6 @@ struct BoardsWorkspaceView: View {
                     rankBlock(title: "振幅榜", accent: Color.dsTextSecondary, items: board.amplitudeBoard, metric: .amplitude)
                     rankBlock(title: "涨停池", accent: Sem.up, items: board.limitUp, metric: .change)
                     rankBlock(title: "跌停池", accent: Sem.down, items: board.limitDown, metric: .change)
-                    sectorBlock(title: "行业板块", sectors: board.industrySectors)
-                    sectorBlock(title: "概念板块", sectors: board.conceptSectors)
                     billboardBlock(items: board.billboard)
                 }
                 .padding(.horizontal, 14)
@@ -64,9 +61,6 @@ struct BoardsWorkspaceView: View {
         }
         .task {
             await env.marketBoard.refreshOverview()
-        }
-        .sheet(item: $sectorSheet) { sector in
-            SectorConstituentsSheet(sector: sector)
         }
     }
 
@@ -99,25 +93,6 @@ struct BoardsWorkspaceView: View {
                                 Button("查看详情") { openDetail(item.symbol) }
                                 Button("加入自选") { addWatch(item.symbol) }
                             }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func sectorBlock(title: String, sectors: [SectorBoard]) -> some View {
-        BoardBlock(title: title, count: sectors.count, accent: Color.dsAccent) {
-            if sectors.isEmpty {
-                EmptyHint(text: "暂无板块")
-                    .frame(maxWidth: .infinity, minHeight: 120)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 1) {
-                        ForEach(Array(sectors.enumerated()), id: \.element.id) { idx, s in
-                            BoardSectorRow(index: idx + 1, sector: s)
-                                .contentShape(Rectangle())
-                                .onTapGesture { sectorSheet = s }
                         }
                     }
                 }
@@ -263,99 +238,3 @@ private struct BoardStockRow: View {
     }
 }
 
-private struct BoardSectorRow: View {
-    let index: Int
-    let sector: SectorBoard
-
-    var body: some View {
-        let color = Sem.change(sector.changePercent)
-        HStack(spacing: 8) {
-            Text("\(index)")
-                .font(.dsMicro(medium: true))
-                .foregroundStyle(index <= 3 ? Color.dsAccent : Color.dsTextTertiary)
-                .frame(width: 16, alignment: .trailing)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(sector.name)
-                    .font(.dsCallout(medium: true))
-                    .foregroundStyle(Color.dsTextPrimary)
-                    .lineLimit(1)
-                Text("领涨 \(sector.leadName)")
-                    .font(.dsMicro())
-                    .foregroundStyle(Color.dsTextTertiary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Text(Fmt.pct(sector.changePercent))
-                .font(.dsMicro(medium: true))
-                .foregroundStyle(color)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .rowHover(selected: false, radius: 5)
-    }
-}
-
-/// 板块成分股：点开后可进详情 / 加自选。
-struct SectorConstituentsSheet: View {
-    @Environment(AppEnvironment.self) private var env
-    let sector: SectorBoard
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(sector.name)
-                        .font(.dsTitle())
-                        .foregroundStyle(Color.dsTextPrimary)
-                    Text(Fmt.pct(sector.changePercent))
-                        .font(.dsCallout(medium: true))
-                        .foregroundStyle(Sem.change(sector.changePercent))
-                }
-                Spacer()
-                Button("关闭") { dismiss() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.dsTextSecondary)
-            }
-            .padding(16)
-
-            Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
-
-            Group {
-                if env.marketBoard.sectorLoading && env.marketBoard.sectorConstituents.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if env.marketBoard.sectorConstituents.isEmpty {
-                    EmptyHint(text: env.marketBoard.sectorError ?? "暂无成分股")
-                } else {
-                    List(env.marketBoard.sectorConstituents) { item in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(item.symbol.name).font(.dsBody(medium: true))
-                                Text(item.symbol.fullCode).font(.dsMicro()).foregroundStyle(Color.dsTextTertiary)
-                            }
-                            Spacer()
-                            Text(Fmt.pct(item.changePercent))
-                                .foregroundStyle(Sem.change(item.changePercent))
-                            Button("+自选") {
-                                env.selectMarketSymbol(item.symbol, addToWatchlist: true)
-                                env.trading.showToast("已加入自选：\(item.symbol.name)", isError: false)
-                            }
-                            .buttonStyle(.plain)
-                            .font(.dsMicro(medium: true))
-                            .foregroundStyle(Color.dsAccent)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            dismiss()
-                            env.workspace = .trading
-                            env.leftPanelMode = .watchlist
-                            env.selectMarketSymbol(item.symbol)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(minWidth: 420, minHeight: 480)
-        .task { await env.marketBoard.openSector(sector) }
-    }
-}
