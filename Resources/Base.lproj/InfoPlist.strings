@@ -1,0 +1,3 @@
+/* Default (any locale): Chinese product name */
+"CFBundleDisplayName" = "量化终端";
+"CFBundleName" = "量化终端";

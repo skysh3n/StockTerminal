@@ -16,7 +16,7 @@
 /* Begin PBXFileReference section */
 		5A1000000000000000000F01 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		5A1000000000000000000F02 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		5A1000000000000000000F03 /* StockTerminal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StockTerminal.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5A1000000000000000000F03 /* 量化终端.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "量化终端.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A1000000000000000000F04 /* TradingCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TradingCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
