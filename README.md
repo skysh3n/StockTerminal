@@ -15,7 +15,7 @@ swift run StockTerminal          # 开发模式（裸可执行，自动进前台
 打包成正规 .app（中文名称 / Dock 图标 / ad-hoc 签名）：
 
 ```bash
-./Scripts/build-app.sh && open build/StockTerminal.app
+./Scripts/build-app.sh && open /Applications/StockTerminal.app
 ```
 
 用 Xcode 开发：打开 `StockTerminal.xcodeproj`，选「量化终端」scheme，⌘R 运行。
