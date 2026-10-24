@@ -118,7 +118,7 @@ struct TopToolbar: View {
             workspaceButton(.trading, title: "交易", icon: "chart.bar.xaxis")
                 .help("交易终端：自选板块、K 线、五档与下单")
             workspaceButton(.boards, title: "榜单", icon: "list.number")
-                .help("市场榜单：涨跌幅、成交额、行业/概念、涨停、龙虎榜")
+                .help("市场榜单全屏：涨跌幅、成交额、换手、振幅、涨跌停、行业/概念、龙虎榜")
             workspaceButton(.global, title: "全球", icon: "globe.asia.australia")
                 .help("全球市场：主要股指行情与走势（只读）")
         }
