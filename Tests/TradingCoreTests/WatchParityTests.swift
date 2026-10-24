@@ -104,9 +104,13 @@ final class WatchParityTests: XCTestCase {
     }
 
     func testAShareIndicesCodes() {
-        XCTAssertEqual(AShareIndices.all.count, 3)
+        XCTAssertEqual(AShareIndices.all.count, 8)
         XCTAssertEqual(AShareIndices.shanghai.fullCode, "SH000001")
         XCTAssertEqual(AShareIndices.shenzhen.fullCode, "SZ399001")
         XCTAssertEqual(AShareIndices.chinext.fullCode, "SZ399006")
+        XCTAssertEqual(AShareIndices.csi300.fullCode, "SH000300")
+        XCTAssertEqual(AShareIndices.star50.fullCode, "SH000688")
+        XCTAssertEqual(AShareIndices.bse50.fullCode, "BJ899050")
+        XCTAssertFalse(StripGlobalIndices.items.isEmpty)
     }
 }

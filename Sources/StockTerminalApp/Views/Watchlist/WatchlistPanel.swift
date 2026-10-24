@@ -2,9 +2,10 @@ import SwiftUI
 import DesignSystem
 import TradingCore
 
-/// 左栏：仅自选股 / 自定义板块（市场榜单在「榜单」工作区）。
+/// 左栏自选股 / 自定义板块。`embedded` 时标题由外层「自选|榜单」承担。
 struct WatchlistPanel: View {
     @Environment(AppEnvironment.self) private var env
+    var embedded: Bool = false
     @State private var showCreate = false
     @State private var newName = ""
     @State private var renameTarget: WatchBoard?
@@ -13,8 +14,10 @@ struct WatchlistPanel: View {
     var body: some View {
         @Bindable var wl = env.watchlist
         VStack(spacing: 0) {
-            PanelHeader(wl.activeBoard?.name ?? "自选") {
-                Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
+            if !embedded {
+                PanelHeader(wl.activeBoard?.name ?? "自选", prominent: true) {
+                    Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
+                }
             }
             boardStrip
             Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)

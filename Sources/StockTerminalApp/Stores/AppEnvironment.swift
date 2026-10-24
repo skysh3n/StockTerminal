@@ -24,9 +24,23 @@ final class AppEnvironment {
     private(set) var isReady = false
     private(set) var usingRealMarket = false
 
-    /// 顶部工具栏工作区：交易（自选）/ 榜单 / 全球。
-    enum Workspace { case trading, boards, global }
+    /// 顶部工具栏工作区：交易（自选+榜单）/ 全球。
+    enum Workspace { case trading, global }
     var workspace: Workspace = .trading
+
+    /// 交易左栏：自选 ↔ 榜单。
+    enum LeftPanelMode: String, CaseIterable, Identifiable {
+        case watchlist
+        case boards
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .watchlist: return "自选"
+            case .boards: return "榜单"
+            }
+        }
+    }
+    var leftPanelMode: LeftPanelMode = .watchlist
 
     /// 全球股指只读看板，与模拟/真实行情无关，始终直连公开接口。
     let globalMarkets = GlobalMarketStore()
@@ -133,29 +147,28 @@ final class AppEnvironment {
         Task { await self.market.select(symbol: sym, timeFrame: tf) }
     }
 
-    /// 进入「榜单」工作区（全屏多块概览）。
-    func showBoardsWorkspace() {
-        workspace = .boards
+    /// 交易左栏切到榜单并刷新。
+    func showBoardsInTrading() {
+        workspace = .trading
+        leftPanelMode = .boards
         Task { await marketBoard.refreshOverview() }
     }
 
-    /// 榜单模式切换（全屏下触发整页刷新）。
+    /// 榜单子模式切换。
     func setBoardMode(_ mode: BoardListMode) {
         guard isReady else { return }
-        workspace = .boards
+        workspace = .trading
+        leftPanelMode = .boards
         Task { await marketBoard.applyMode(mode) }
     }
 
-    /// 从榜单/指数选中：建档、订阅、切图。在榜单工作区点选时留在榜单，不打断浏览。
+    /// 从榜单/指数选中：建档、订阅、切图；留在交易三栏。
     func selectMarketSymbol(_ symbol: Symbol, addToWatchlist: Bool = false) {
         guard isReady else { return }
-        if workspace == .global { workspace = .boards }
+        if workspace == .global { workspace = .trading }
         watchlist.register(symbol)
         if addToWatchlist {
             watchlist.add(symbol.fullCode)
-            if workspace == .boards {
-                // 加入自选后提示，仍留在榜单
-            }
         }
         market.ensureSymbol(symbol)
         watchlist.select(symbol.fullCode)

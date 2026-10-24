@@ -77,28 +77,31 @@ extension View {
 
 struct PanelHeader<Trailing: View>: View {
     let title: String
+    /// 自选 / 榜单等主模块标题加大一号，更易扫读。
+    var prominent: Bool = false
     @ViewBuilder var trailing: Trailing
 
-    init(_ title: String, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+    init(_ title: String, prominent: Bool = false, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
         self.title = title
+        self.prominent = prominent
         self.trailing = trailing()
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 8) {
             UnevenRoundedRectangle(topLeadingRadius: 1, bottomLeadingRadius: 1,
                                    bottomTrailingRadius: 1, topTrailingRadius: 1)
                 .fill(Color.dsAccent.opacity(0.85))
-                .frame(width: 2, height: 9)
+                .frame(width: 2.5, height: prominent ? 14 : 9)
             Text(title)
-                .font(.dsLabel(medium: true))
-                .tracking(0.5)
-                .foregroundStyle(Color.dsTextSecondary)
+                .font(prominent ? .dsCallout(medium: true) : .dsLabel(medium: true))
+                .tracking(prominent ? 0.2 : 0.5)
+                .foregroundStyle(prominent ? Color.dsTextPrimary : Color.dsTextSecondary)
             Spacer(minLength: 0)
             trailing
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.vertical, prominent ? 9 : 7)
     }
 }
 

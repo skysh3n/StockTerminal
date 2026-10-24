@@ -65,6 +65,8 @@ final class MarketBoardStore {
     var listMode: BoardListMode = .gainers
 
     private(set) var indexQuotes: [String: Quote] = [:]
+    /// 指数条上的港美股等（腾讯/新浪公开源）
+    private(set) var stripGlobalQuotes: [String: GlobalIndexQuote] = [:]
 
     // 各榜独立缓存（全屏多块同时展示，互不覆盖）
     private(set) var gainers: [MarketRankItem] = []
@@ -118,6 +120,7 @@ final class MarketBoardStore {
     private let billboardClient = EastmoneyBillboardClient()
     private let fundFlowClient = EastmoneyFundFlowClient()
     private let tencent = TencentMarketClient()
+    private let globalClient = GlobalIndexClient()
 
     func start(usingRealMarket: Bool, market: MarketStore) {
         self.usingReal = usingRealMarket
@@ -386,6 +389,9 @@ final class MarketBoardStore {
             }
             if !map.isEmpty { indexQuotes = map }
         }
+        // 恒生 / 纳指等：始终走公开接口（与是否 A 股真实行情无关）
+        let globals = await globalClient.quotes(for: StripGlobalIndices.items)
+        if !globals.isEmpty { stripGlobalQuotes = globals }
     }
 
     // MARK: - Mock

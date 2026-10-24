@@ -170,6 +170,7 @@ struct BoardsWorkspaceView: View {
 
     private func openDetail(_ symbol: Symbol) {
         env.workspace = .trading
+        env.leftPanelMode = .watchlist
         env.selectMarketSymbol(symbol)
     }
 
@@ -295,7 +296,7 @@ private struct BoardSectorRow: View {
 }
 
 /// 板块成分股：点开后可进详情 / 加自选。
-private struct SectorConstituentsSheet: View {
+struct SectorConstituentsSheet: View {
     @Environment(AppEnvironment.self) private var env
     let sector: SectorBoard
     @Environment(\.dismiss) private var dismiss
@@ -347,6 +348,7 @@ private struct SectorConstituentsSheet: View {
                         .onTapGesture {
                             dismiss()
                             env.workspace = .trading
+                            env.leftPanelMode = .watchlist
                             env.selectMarketSymbol(item.symbol)
                         }
                     }
