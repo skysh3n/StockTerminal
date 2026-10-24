@@ -24,8 +24,8 @@ final class AppEnvironment {
     private(set) var isReady = false
     private(set) var usingRealMarket = false
 
-    /// 顶部工具栏切换的工作区：交易终端，或只读的全球市场看板。
-    enum Workspace { case trading, global }
+    /// 顶部工具栏工作区：交易（自选）/ 榜单 / 全球。
+    enum Workspace { case trading, boards, global }
     var workspace: Workspace = .trading
 
     /// 全球股指只读看板，与模拟/真实行情无关，始终直连公开接口。
@@ -128,31 +128,35 @@ final class AppEnvironment {
               let sym = watchlist.symbol(for: code) else { return }
         syncDraft(code: code, name: sym.name)
         notices.load(for: code)
+        marketBoard.loadFundFlow(for: code)
         let tf = watchlist.selectedTimeFrame
         Task { await self.market.select(symbol: sym, timeFrame: tf) }
     }
 
-    /// 左栏切模式时刷新对应数据源。
-    func setListMode(_ mode: WatchlistMode) {
-        guard isReady else { return }
-        watchlist.listMode = mode
-        if let kind = mode.rankKind {
-            Task { await marketBoard.refreshRanking(kind: kind) }
-        } else if let sk = mode.sectorKind {
-            Task { await marketBoard.refreshSectors(kind: sk) }
-        } else if mode.isLimitUp {
-            Task { await marketBoard.refreshLimitUp() }
-        } else {
-            marketBoard.closeSector()
-        }
+    /// 进入「榜单」工作区。
+    func showBoardsWorkspace() {
+        workspace = .boards
+        Task { await marketBoard.applyMode(marketBoard.listMode) }
     }
 
-    /// 从榜单/指数选中：建档、订阅、切图（与搜索加入同源）。
+    /// 榜单左栏切模式。
+    func setBoardMode(_ mode: BoardListMode) {
+        guard isReady else { return }
+        workspace = .boards
+        Task { await marketBoard.applyMode(mode) }
+    }
+
+    /// 从榜单/指数选中：建档、订阅、切图。在榜单工作区点选时留在榜单，不打断浏览。
     func selectMarketSymbol(_ symbol: Symbol, addToWatchlist: Bool = false) {
         guard isReady else { return }
-        workspace = .trading
+        if workspace == .global { workspace = .boards }
         watchlist.register(symbol)
-        if addToWatchlist { watchlist.add(symbol.fullCode) }
+        if addToWatchlist {
+            watchlist.add(symbol.fullCode)
+            if workspace == .boards {
+                // 加入自选后提示，仍留在榜单
+            }
+        }
         market.ensureSymbol(symbol)
         watchlist.select(symbol.fullCode)
         selectionChanged()

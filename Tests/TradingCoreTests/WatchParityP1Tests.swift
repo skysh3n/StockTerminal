@@ -88,4 +88,25 @@ final class WatchParityP1Tests: XCTestCase {
         XCTAssertEqual(items[0].title, "测试新闻")
         XCTAssertNotNil(items[0].url)
     }
+
+    func testBillboardParse() throws {
+        let json = """
+        {"result":{"data":[
+          {"SECURITY_CODE":"000001","SECURITY_NAME_ABBR":"平安银行","TRADE_DATE":"2026-10-23 00:00:00","CLOSE_PRICE":11.2,"CHANGE_RATE":2.1,"BILLBOARD_NET_AMT":1.5e7,"EXPLAIN":"机构买入"}
+        ]}}
+        """.data(using: .utf8)!
+        let items = try EastmoneyBillboardClient.parse(data: json, limit: 10)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].symbol.fullCode, "SZ000001")
+        XCTAssertEqual(items[0].netAmount, Decimal(string: "15000000")!)
+    }
+
+    func testFundFlowParse() throws {
+        let json = """
+        {"rc":0,"data":{"klines":["2026-10-23 09:31,1000.0,-500.0,0,0,0"]}}
+        """.data(using: .utf8)!
+        let snap = try EastmoneyFundFlowClient.parse(data: json, symbol: "SH600519")
+        XCTAssertEqual(snap?.mainNetInflow, 1000)
+        XCTAssertEqual(snap?.retailNetInflow, -500)
+    }
 }

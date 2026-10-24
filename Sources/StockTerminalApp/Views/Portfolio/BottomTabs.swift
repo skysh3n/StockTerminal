@@ -531,6 +531,7 @@ private struct NewsHeadlineRow: View {
 
 struct AlertsTable: View {
     @Environment(AppEnvironment.self) private var env
+    @State private var draftKind: PriceAlertKind = .absolutePrice
     @State private var draftDirection: PriceAlertDirection = .above
     @State private var draftThreshold = ""
 
@@ -540,9 +541,9 @@ struct AlertsTable: View {
             Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
 
             HStack(spacing: 0) {
-                headerCell("标的", 120, .leading)
-                headerCell("条件", 56, .center)
-                headerCell("阈值", 72, .trailing)
+                headerCell("标的", 100, .leading)
+                headerCell("类型", 56, .center)
+                headerCell("条件", 72, .trailing)
                 headerCell("状态", 56, .center)
                 Spacer(minLength: 8)
                 headerCell("操作", 88, .center)
@@ -576,20 +577,32 @@ struct AlertsTable: View {
                 .font(.dsFootnote(medium: true))
                 .foregroundStyle(Color.dsTextPrimary)
                 .lineLimit(1)
-                .frame(width: 72, alignment: .leading)
-            Picker("", selection: $draftDirection) {
-                Text("涨破").tag(PriceAlertDirection.above)
-                Text("跌破").tag(PriceAlertDirection.below)
+                .frame(width: 64, alignment: .leading)
+            Picker("", selection: $draftKind) {
+                Text("价格").tag(PriceAlertKind.absolutePrice)
+                Text("涨幅%").tag(PriceAlertKind.dayChangeUp)
+                Text("跌幅%").tag(PriceAlertKind.dayChangeDown)
             }
             .labelsHidden()
-            .frame(width: 72)
-            TextField(ref.map { Fmt.price($0) } ?? "价格", text: $draftThreshold)
-                .textFieldStyle(.plain)
-                .font(.dsFootnote())
-                .foregroundStyle(Color.dsTextPrimary)
-                .padding(.horizontal, 8)
-                .frame(width: 88, height: 24)
-                .inputBox(focused: false)
+            .frame(width: 78)
+            if draftKind == .absolutePrice {
+                Picker("", selection: $draftDirection) {
+                    Text("涨破").tag(PriceAlertDirection.above)
+                    Text("跌破").tag(PriceAlertDirection.below)
+                }
+                .labelsHidden()
+                .frame(width: 64)
+            }
+            TextField(
+                draftKind == .absolutePrice ? (ref.map { Fmt.price($0) } ?? "价格") : "例如 3",
+                text: $draftThreshold
+            )
+            .textFieldStyle(.plain)
+            .font(.dsFootnote())
+            .foregroundStyle(Color.dsTextPrimary)
+            .padding(.horizontal, 8)
+            .frame(width: 80, height: 24)
+            .inputBox(focused: false)
             Button("添加预警") { commitAlert(code: code, name: name) }
                 .buttonStyle(.plain)
                 .font(.dsMicro(medium: true))
@@ -600,7 +613,11 @@ struct AlertsTable: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .onChange(of: code) { _, _ in
-            if let ref { draftThreshold = Fmt.price(ref) }
+            if draftKind == .absolutePrice, let ref { draftThreshold = Fmt.price(ref) }
+        }
+        .onChange(of: draftKind) { _, kind in
+            if kind == .absolutePrice, let ref { draftThreshold = Fmt.price(ref) }
+            else if draftThreshold.isEmpty || draftKind != .absolutePrice { draftThreshold = "3" }
         }
         .onAppear {
             if draftThreshold.isEmpty, let ref { draftThreshold = Fmt.price(ref) }
@@ -611,11 +628,22 @@ struct AlertsTable: View {
         guard let code else { return }
         let cleaned = draftThreshold.trimmingCharacters(in: .whitespaces)
             .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "%", with: "")
         guard let threshold = Decimal(string: cleaned), threshold > 0 else {
-            env.trading.showToast("请输入有效价格", isError: true)
+            env.trading.showToast("请输入有效数值", isError: true)
             return
         }
-        if env.alerts.add(symbol: code, name: name, direction: draftDirection, threshold: threshold) {
+        let direction: PriceAlertDirection = {
+            switch draftKind {
+            case .absolutePrice: return draftDirection
+            case .dayChangeUp: return .above
+            case .dayChangeDown: return .below
+            }
+        }()
+        if env.alerts.add(
+            symbol: code, name: name, kind: draftKind,
+            direction: direction, threshold: threshold
+        ) {
             env.trading.showToast("已添加预警", isError: false)
         }
     }
@@ -631,6 +659,13 @@ private struct AlertRow: View {
             if !alert.enabled { return ("关闭", Color.dsTextTertiary) }
             return ("监视中", Color.dsDown)
         }()
+        let condition: String = {
+            switch alert.kind {
+            case .absolutePrice: return "\(alert.direction.label) \(Fmt.price(alert.threshold))"
+            case .dayChangeUp: return "涨≥\(String(format: "%.1f", alert.threshold.doubleValue))%"
+            case .dayChangeDown: return "跌≤-\(String(format: "%.1f", alert.threshold.doubleValue))%"
+            }
+        }()
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(alert.name)
@@ -641,9 +676,9 @@ private struct AlertRow: View {
                     .font(.dsMicro())
                     .foregroundStyle(Color.dsTextTertiary)
             }
-            .frame(width: 120, alignment: .leading)
-            cell(alert.direction.label, 56, .center, .dsTextSecondary, medium: true)
-            cell(Fmt.price(alert.threshold), 72, .trailing, .dsTextPrimary)
+            .frame(width: 100, alignment: .leading)
+            cell(alert.kind.label, 56, .center, .dsTextSecondary, medium: true)
+            cell(condition, 72, .trailing, .dsTextPrimary)
             cell(status.0, 56, .center, status.1, medium: true)
             Spacer(minLength: 8)
             HStack(spacing: 4) {

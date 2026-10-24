@@ -32,9 +32,18 @@ final class AlertStore {
     }
 
     @discardableResult
-    func add(symbol: String, name: String, direction: PriceAlertDirection, threshold: Decimal) -> Bool {
+    func add(
+        symbol: String,
+        name: String,
+        kind: PriceAlertKind = .absolutePrice,
+        direction: PriceAlertDirection,
+        threshold: Decimal
+    ) -> Bool {
         guard threshold > 0 else { return false }
-        let alert = PriceAlert(symbol: symbol, name: name, direction: direction, threshold: threshold)
+        let alert = PriceAlert(
+            symbol: symbol, name: name, kind: kind,
+            direction: direction, threshold: threshold
+        )
         alerts.insert(alert, at: 0)
         persist()
         return true
@@ -65,11 +74,23 @@ final class AlertStore {
         var dirty = false
         for i in alerts.indices {
             guard let q = market.states[alerts[i].symbol]?.quote else { continue }
-            if let at = AlertEvaluator.shouldTrigger(alert: alerts[i], lastPrice: q.lastPrice, now: now) {
+            if let at = AlertEvaluator.shouldTrigger(
+                alert: alerts[i],
+                lastPrice: q.lastPrice,
+                changePercent: q.changePercent,
+                now: now
+            ) {
                 alerts[i].triggeredAt = at
                 dirty = true
                 let a = alerts[i]
-                fired.append("\(a.name) \(a.direction.label) \(Fmt.price(a.threshold))（现价 \(Fmt.price(q.lastPrice))）")
+                switch a.kind {
+                case .absolutePrice:
+                    fired.append("\(a.name) \(a.direction.label) \(Fmt.price(a.threshold))（现价 \(Fmt.price(q.lastPrice))）")
+                case .dayChangeUp:
+                    fired.append("\(a.name) 涨幅≥\(Fmt.pct(a.threshold.doubleValue).replacingOccurrences(of: "+", with: ""))（现 \(Fmt.pct(q.changePercent))）")
+                case .dayChangeDown:
+                    fired.append("\(a.name) 跌幅≤-\(String(format: "%.2f", a.threshold.doubleValue))%（现 \(Fmt.pct(q.changePercent))）")
+                }
             }
         }
         if dirty { persist() }

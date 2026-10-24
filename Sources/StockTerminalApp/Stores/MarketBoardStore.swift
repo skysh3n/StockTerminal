@@ -2,10 +2,59 @@ import Foundation
 import Observation
 import TradingCore
 
-/// 看盘补充：A 股指数条 + 个股榜 + 行业/概念 + 涨停池。
+/// 「榜单」工作区左栏模式（与自选完全分离）。
+enum BoardListMode: String, CaseIterable, Identifiable {
+    case gainers
+    case losers
+    case turnover
+    case industry
+    case concept
+    case limitUp
+    case billboard
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .gainers: return "涨幅"
+        case .losers: return "跌幅"
+        case .turnover: return "成交额"
+        case .industry: return "行业"
+        case .concept: return "概念"
+        case .limitUp: return "涨停"
+        case .billboard: return "龙虎榜"
+        }
+    }
+
+    var rankKind: MarketRankKind? {
+        switch self {
+        case .gainers: return .gainers
+        case .losers: return .losers
+        case .turnover: return .turnover
+        default: return nil
+        }
+    }
+
+    var sectorKind: SectorKind? {
+        switch self {
+        case .industry: return .industry
+        case .concept: return .concept
+        default: return nil
+        }
+    }
+
+    var isStockRanking: Bool { rankKind != nil }
+    var isSectorMode: Bool { sectorKind != nil }
+    var isLimitUp: Bool { self == .limitUp }
+    var isBillboard: Bool { self == .billboard }
+}
+
+/// 看盘补充：A 股指数条 + 个股榜 + 行业/概念 + 涨停池 + 龙虎榜。
 @MainActor
 @Observable
 final class MarketBoardStore {
+    var listMode: BoardListMode = .gainers
+
     private(set) var indexQuotes: [String: Quote] = [:]
 
     // 个股榜
@@ -27,13 +76,25 @@ final class MarketBoardStore {
     private(set) var limitUpLoading = false
     private(set) var limitUpError: String?
 
+    // 龙虎榜
+    private(set) var billboard: [BillboardEntry] = []
+    private(set) var billboardLoading = false
+    private(set) var billboardError: String?
+
+    // 当前选中标的资金流（分钟/日净流入摘要）
+    private(set) var fundFlow: FundFlowSnapshot?
+    private(set) var fundFlowLoading = false
+
     private var usingReal = false
     private var market: MarketStore?
     private var indexTask: Task<Void, Never>?
+    private var fundFlowTask: Task<Void, Never>?
     private let rankClient = EastmoneyRankClient()
     private let sectorClient = EastmoneySectorClient()
     private let sinaSector = SinaSectorClient()
     private let limitUpClient = EastmoneyLimitUpClient()
+    private let billboardClient = EastmoneyBillboardClient()
+    private let fundFlowClient = EastmoneyFundFlowClient()
     private let tencent = TencentMarketClient()
 
     func start(usingRealMarket: Bool, market: MarketStore) {
@@ -44,6 +105,20 @@ final class MarketBoardStore {
             await self?.loopIndices()
         }
         Task { await refreshRanking(kind: .gainers) }
+    }
+
+    /// 进入「榜单」工作区或切换左栏模式时调用。
+    func applyMode(_ mode: BoardListMode) async {
+        listMode = mode
+        if let kind = mode.rankKind {
+            await refreshRanking(kind: kind)
+        } else if let sk = mode.sectorKind {
+            await refreshSectors(kind: sk)
+        } else if mode.isLimitUp {
+            await refreshLimitUp()
+        } else if mode.isBillboard {
+            await refreshBillboard()
+        }
     }
 
     func stop() {
@@ -155,6 +230,49 @@ final class MarketBoardStore {
         }
     }
 
+    // MARK: - 龙虎榜
+
+    func refreshBillboard() async {
+        billboardLoading = true
+        billboardError = nil
+        defer { billboardLoading = false }
+        if usingReal {
+            do {
+                billboard = try await billboardClient.daily(limit: 40)
+            } catch {
+                billboardError = "龙虎榜暂时不可用"
+                if billboard.isEmpty { billboard = mockBillboard() }
+            }
+        } else {
+            billboard = mockBillboard()
+        }
+    }
+
+    // MARK: - 资金流
+
+    func loadFundFlow(for fullCode: String?) {
+        fundFlowTask?.cancel()
+        guard let fullCode, !fullCode.isEmpty else {
+            fundFlow = nil
+            return
+        }
+        fundFlowLoading = true
+        fundFlowTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.fundFlowLoading = false }
+            if self.usingReal {
+                self.fundFlow = try? await self.fundFlowClient.snapshot(fullCode: fullCode)
+            } else {
+                self.fundFlow = FundFlowSnapshot(
+                    symbol: fullCode,
+                    mainNetInflow: 12_500_000,
+                    retailNetInflow: -8_200_000,
+                    asOf: Date()
+                )
+            }
+        }
+    }
+
     // MARK: - 指数
 
     private func loopIndices() async {
@@ -250,6 +368,19 @@ final class MarketBoardStore {
     private func mockLimitUp() -> [MarketRankItem] {
         mockRanking(kind: .gainers).filter {
             $0.changePercent + 0.05 >= EastmoneyLimitUpClient.limitThreshold(for: $0.symbol)
+        }
+    }
+
+    private func mockBillboard() -> [BillboardEntry] {
+        mockRanking(kind: .gainers).prefix(8).enumerated().map { idx, item in
+            BillboardEntry(
+                symbol: item.symbol,
+                closePrice: item.lastPrice,
+                changePercent: item.changePercent,
+                netAmount: Decimal(idx % 2 == 0 ? 50_000_000 : -30_000_000),
+                explanation: "（模拟）龙虎榜示例",
+                tradeDate: "2026-10-23"
+            )
         }
     }
 }

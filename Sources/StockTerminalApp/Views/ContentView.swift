@@ -41,7 +41,7 @@ struct ContentView: View {
                 .layoutPriority(2)
 
             switch env.workspace {
-            case .trading: tradingWorkspace
+            case .trading, .boards: tradingWorkspace
             case .global: GlobalMarketsView()
             }
         }
@@ -66,7 +66,12 @@ struct ContentView: View {
                 let right = LayoutStore.clamp(layout.rightWidth, 260...rightMax)
 
                 HStack(spacing: 0) {
-                    WatchlistPanel()
+                    Group {
+                        switch env.workspace {
+                        case .boards: MarketBoardsPanel()
+                        default: WatchlistPanel()
+                        }
+                    }
                         .terminalCard()
                         .padding(.leading, 8)
                         .padding(.vertical, 8)

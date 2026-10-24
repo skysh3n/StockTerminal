@@ -18,17 +18,41 @@ struct CandlestickCanvas: View {
     let layout: ChartLayout
     let preClose: Double?
     let tf: TimeFrame
+    /// 用户画线：水平价位（主图坐标）。
+    var hLines: [Double] = []
 
     var body: some View {
         Canvas { ctx, size in
             guard !bars.isEmpty, layout.visible.count > 0 else { return }
             drawGrid(ctx: ctx, size: size)
             drawSRLevels(ctx: ctx, size: size)
+            drawUserHLines(ctx: ctx, size: size)
             drawLastPriceLine(ctx: ctx, size: size)
             drawCandles(ctx: ctx)
             drawOverlayLines(ctx: ctx)
             drawAxes(ctx: ctx, size: size)
             drawLegend(ctx: ctx)
+        }
+    }
+
+    private func drawUserHLines(ctx: GraphicsContext, size: CGSize) {
+        let plotBottom = size.height - layout.bottomMargin
+        for price in hLines {
+            let y = layout.y(price: price)
+            guard y > layout.topMargin, y < plotBottom else { continue }
+            var line = Path()
+            line.move(to: CGPoint(x: 0, y: y))
+            line.addLine(to: CGPoint(x: size.width - layout.rightMargin, y: y))
+            ctx.stroke(line, with: .color(Color.dsAccent.opacity(0.85)),
+                       style: StrokeStyle(lineWidth: 1, dash: [6, 3]))
+            let label = String(format: "%.2f", price)
+            let tag = CGRect(x: 4, y: y - 7, width: CGFloat(label.count) * 6.2 + 8, height: 14)
+            ctx.fill(Path(roundedRect: tag, cornerRadius: 3), with: .color(Color.dsAccent.opacity(0.18)))
+            ctx.draw(
+                Text(label).font(.system(size: 9, weight: .medium).monospacedDigit())
+                    .foregroundColor(Color.dsAccent),
+                at: CGPoint(x: tag.minX + 4, y: tag.midY), anchor: .leading
+            )
         }
     }
 

@@ -10,52 +10,6 @@ struct WatchBoard: Identifiable, Hashable {
     var codes: [String]
 }
 
-/// 左栏列表模式：自选 / 个股榜 / 板块 / 涨停池。
-enum WatchlistMode: String, CaseIterable, Identifiable {
-    case watchlist
-    case gainers
-    case losers
-    case turnover
-    case industry
-    case concept
-    case limitUp
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .watchlist: return "自选"
-        case .gainers: return "涨幅"
-        case .losers: return "跌幅"
-        case .turnover: return "成交额"
-        case .industry: return "行业"
-        case .concept: return "概念"
-        case .limitUp: return "涨停"
-        }
-    }
-
-    var rankKind: MarketRankKind? {
-        switch self {
-        case .gainers: return .gainers
-        case .losers: return .losers
-        case .turnover: return .turnover
-        default: return nil
-        }
-    }
-
-    var sectorKind: SectorKind? {
-        switch self {
-        case .industry: return .industry
-        case .concept: return .concept
-        default: return nil
-        }
-    }
-
-    var isStockRanking: Bool { rankKind != nil }
-    var isSectorMode: Bool { sectorKind != nil }
-    var isLimitUp: Bool { self == .limitUp }
-}
-
 /// 自选列表排序。
 enum WatchlistSort: String, CaseIterable {
     case manual
@@ -76,6 +30,7 @@ enum WatchlistSort: String, CaseIterable {
 /// 自选与自定义板块、当前标的/周期、搜索词。
 /// 持久化到 Application Support/StockTerminal/boards.json。
 /// 旧版 watchlist.json 会在首次启动时迁入「自选」。
+/// 市场榜单不在此 Store —— 见「榜单」工作区 / MarketBoardStore。
 @MainActor
 @Observable
 final class WatchlistStore {
@@ -85,7 +40,6 @@ final class WatchlistStore {
     var selectedCode: String?
     var selectedTimeFrame: TimeFrame = .day
     var query: String = ""
-    var listMode: WatchlistMode = .watchlist
     var sort: WatchlistSort = .manual
 
     let universeInitial: [Symbol]

@@ -9,6 +9,9 @@ struct CandleChartView: View {
     let viewport: Viewport
     let overlayKind: MainOverlay
     let showSR: Bool
+    var hLines: [Double] = []
+    var drawHLine: Bool = false
+    var onAddHLine: ((Double) -> Void)? = nil
     /// 是否允许捏合 / 双指纵向滚轮缩放。全球指数关闭，只保留左右平移。
     var allowsZoom: Bool = true
     /// 平移灵敏度：>1 同样拖动距离移动更多根 K 线。
@@ -30,7 +33,8 @@ struct CandleChartView: View {
                 } else {
                     CandlestickCanvas(
                         bars: bars, lines: lines, srLevels: srLevels, layout: layout,
-                        preClose: series.preClose?.doubleValue, tf: series.timeFrame
+                        preClose: series.preClose?.doubleValue, tf: series.timeFrame,
+                        hLines: hLines
                     )
                     CrosshairCanvas(
                         bars: bars, layout: layout, tf: series.timeFrame,
@@ -48,7 +52,7 @@ struct CandleChartView: View {
             .gesture(
                 DragGesture(minimumDistance: 4)
                     .onChanged { g in
-                        // 只取横向位移，避免触控板纵向滑动干扰平移。
+                        guard !drawHLine else { return }
                         viewport.pan(
                             translationX: g.translation.width * panSensitivity,
                             spacing: layout.candleSpacing,
@@ -57,8 +61,14 @@ struct CandleChartView: View {
                     }
                     .onEnded { _ in viewport.panStartOffset = nil }
             )
-            .modifier(CandleZoomGestures(enabled: allowsZoom, viewport: viewport))
+            .modifier(CandleZoomGestures(enabled: allowsZoom && !drawHLine, viewport: viewport))
             .onTapGesture(count: 2) { viewport.reset() }
+            .simultaneousGesture(
+                SpatialTapGesture().onEnded { value in
+                    guard drawHLine, !bars.isEmpty else { return }
+                    onAddHLine?(layout.price(y: value.location.y))
+                }
+            )
         }
     }
 
@@ -108,10 +118,11 @@ struct ChartHeader: View {
     let amplitude: Double?
     let volume: Int64?
     let turnover: Decimal?
+    var fundFlow: FundFlowSnapshot? = nil
     /// 标题行左侧额外内容（例如全球详情的返回按钮）
     var leading: AnyView? = nil
 
-    init(state: SymbolState?) {
+    init(state: SymbolState?, fundFlow: FundFlowSnapshot? = nil) {
         let q = state?.quote
         self.name = state?.symbol.name ?? "--"
         if let sym = state?.symbol {
@@ -132,6 +143,7 @@ struct ChartHeader: View {
         self.amplitude = q?.amplitude
         self.volume = q?.volume
         self.turnover = q?.turnover
+        self.fundFlow = fundFlow
         self.leading = nil
     }
 
@@ -148,6 +160,7 @@ struct ChartHeader: View {
         amplitude: Double?,
         volume: Int64? = nil,
         turnover: Decimal? = nil,
+        fundFlow: FundFlowSnapshot? = nil,
         leading: AnyView? = nil
     ) {
         self.name = name
@@ -162,6 +175,7 @@ struct ChartHeader: View {
         self.amplitude = amplitude
         self.volume = volume
         self.turnover = turnover
+        self.fundFlow = fundFlow
         self.leading = leading
     }
 
@@ -202,6 +216,10 @@ struct ChartHeader: View {
                 if volume != nil || turnover != nil {
                     statItem("成交量", volume.map { Fmt.volume(shares: $0) } ?? "--", .dsTextSecondary)
                     statItem("成交额", Fmt.amount(turnover), .dsTextSecondary)
+                }
+                if let ff = fundFlow {
+                    statItem("主力净流入", Fmt.amount(ff.mainNetInflow), Sem.change(ff.mainNetInflow.doubleValue))
+                    statItem("散户净流入", Fmt.amount(ff.retailNetInflow), Sem.change(ff.retailNetInflow.doubleValue))
                 }
                 Spacer(minLength: 0)
             }
@@ -324,22 +342,26 @@ struct MiniTab: View {
     }
 }
 
-/// 中栏图表面板：头部 + 周期/叠加指标选择 + 主图 + 副图（VOL/MACD/KDJ/RSI）
+/// 中栏图表面板：头部 + 周期/叠加指标 + 主图 + 多副图 + 水平画线
 struct ChartPanel: View {
     @Environment(AppEnvironment.self) private var env
     @State private var viewport = Viewport()
     @State private var overlayKind: MainOverlay = .ma
-    @State private var subKind: SubIndicator = .macd
+    /// 多副图：最多同时 2 个（含 VOL）。
+    @State private var subPanes: [SubIndicator] = [.vol, .macd]
     @State private var showSR = true
+    @State private var drawHLine = false
+    @State private var hLinesBySymbol: [String: [Double]] = [:]
 
     var body: some View {
         @Bindable var wl = env.watchlist
         let code = wl.selectedCode
         let state = code.flatMap { env.market.states[$0] }
         let series = env.market.activeSeries
+        let hLines = code.flatMap { hLinesBySymbol[$0] } ?? []
 
         VStack(spacing: 0) {
-            ChartHeader(state: state)
+            ChartHeader(state: state, fundFlow: env.marketBoard.fundFlow)
 
             HStack(spacing: 12) {
                 HStack(spacing: 1) {
@@ -364,7 +386,20 @@ struct ChartPanel: View {
                     Rectangle().fill(Color.dsBorder).frame(width: 0.5, height: 11)
                         .padding(.horizontal, 3)
                     MiniTab(label: "支撑压力", active: showSR) { showSR.toggle() }
-                        .help("支撑压力：自动识别摆动高低点并聚类（触及越多越粗）")
+                        .help("支撑压力：自动识别摆动高低点并聚类")
+                    MiniTab(label: "水平线", active: drawHLine) {
+                        drawHLine.toggle()
+                    }
+                    .help("画水平线：开启后单击主图锚定价位；再点清除该标的全部水平线")
+                    if !hLines.isEmpty {
+                        Button("清线") {
+                            if let code { hLinesBySymbol[code] = [] }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.dsMicro())
+                        .foregroundStyle(Color.dsTextTertiary)
+                        .help("清除当前标的水平线")
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -379,15 +414,31 @@ struct ChartPanel: View {
                     TimeShareChartView(series: s, viewport: viewport)
                 } else if let s = series {
                     VStack(spacing: 0) {
-                        CandleChartView(series: s, viewport: viewport, overlayKind: overlayKind, showSR: showSR)
+                        CandleChartView(
+                            series: s, viewport: viewport,
+                            overlayKind: overlayKind, showSR: showSR,
+                            hLines: hLines, drawHLine: drawHLine,
+                            onAddHLine: { price in
+                                guard let code else { return }
+                                var lines = hLinesBySymbol[code] ?? []
+                                lines.append(price)
+                                if lines.count > 8 { lines.removeFirst(lines.count - 8) }
+                                hLinesBySymbol[code] = lines
+                            }
+                        )
                         Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
                         subPaneBar
-                        if subKind == .vol {
-                            VolumeStrip(series: s, viewport: viewport)
-                                .frame(height: 56)
-                        } else {
-                            IndicatorPane(series: s, viewport: viewport, kind: subKind)
-                                .frame(height: 62)
+                        ForEach(subPanes, id: \.self) { kind in
+                            Group {
+                                if kind == .vol {
+                                    VolumeStrip(series: s, viewport: viewport)
+                                        .frame(height: 48)
+                                } else {
+                                    IndicatorPane(series: s, viewport: viewport, kind: kind)
+                                        .frame(height: 54)
+                                }
+                            }
+                            Rectangle().fill(Color.dsBorder.opacity(0.35)).frame(height: 0.5)
                         }
                     }
                 } else {
@@ -395,24 +446,44 @@ struct ChartPanel: View {
                 }
             }
         }
-        .onChange(of: code) { _, _ in viewport.reset() }
+        .onChange(of: code) { _, _ in
+            viewport.reset()
+            drawHLine = false
+        }
         .onChange(of: wl.selectedTimeFrame) { _, _ in viewport.reset() }
     }
 
-    /// 副图指标 Tab（VOL/MACD/KDJ/RSI）
+    /// 副图多选（最多 2 个）
     private var subPaneBar: some View {
         HStack(spacing: 2) {
+            Text("副图")
+                .font(.dsMicro())
+                .foregroundStyle(Color.dsTextTertiary)
+                .padding(.trailing, 4)
             ForEach(SubIndicator.allCases, id: \.self) { kind in
-                MiniTab(label: kind.label, active: subKind == kind) {
-                    subKind = kind
+                MiniTab(label: kind.label, active: subPanes.contains(kind)) {
+                    toggleSub(kind)
                 }
             }
             Spacer()
+            Text("最多 2 个")
+                .font(.dsMicro())
+                .foregroundStyle(Color.dsTextTertiary)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Color.dsBorder.opacity(0.4)).frame(height: 0.5)
+        }
+    }
+
+    private func toggleSub(_ kind: SubIndicator) {
+        if let idx = subPanes.firstIndex(of: kind) {
+            guard subPanes.count > 1 else { return }
+            subPanes.remove(at: idx)
+        } else {
+            if subPanes.count >= 2 { subPanes.removeFirst() }
+            subPanes.append(kind)
         }
     }
 }

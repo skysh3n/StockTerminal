@@ -2,7 +2,7 @@ import SwiftUI
 import DesignSystem
 import TradingCore
 
-/// 左栏：自选股 / 市场榜单（实时跳动 + 行内缩浮层 hover + 价格闪烁 + 右键删除）
+/// 左栏：仅自选股 / 自定义板块（市场榜单在「榜单」工作区）。
 struct WatchlistPanel: View {
     @Environment(AppEnvironment.self) private var env
     @State private var showCreate = false
@@ -13,108 +13,8 @@ struct WatchlistPanel: View {
     var body: some View {
         @Bindable var wl = env.watchlist
         VStack(spacing: 0) {
-            PanelHeader(headerTitle) {
-                headerTrailing
-            }
-            modeStrip
-            if wl.listMode == .watchlist {
-                boardStrip
-                Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
-                watchlistColumns
-                watchlistBody
-            } else {
-                Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
-                switch wl.listMode {
-                case .gainers, .losers, .turnover:
-                    RankListPanel()
-                case .industry, .concept:
-                    SectorListPanel()
-                case .limitUp:
-                    LimitUpListPanel()
-                case .watchlist:
-                    EmptyView()
-                }
-            }
-        }
-        .popover(isPresented: $showCreate, arrowEdge: .bottom) { namePopover(creating: true) }
-        .alert("重命名板块", isPresented: renamePresented) {
-            TextField("名称", text: $renameText)
-            Button("取消", role: .cancel) {}
-            Button("确定") {
-                if let renameTarget { env.watchlist.renameBoard(renameTarget.id, name: renameText) }
-            }
-        } message: {
-            Text("最多 12 个字，不能和已有板块重名。")
-        }
-    }
-
-    private var headerTitle: String {
-        switch env.watchlist.listMode {
-        case .watchlist: return env.watchlist.activeBoard?.name ?? "自选"
-        case .gainers: return "涨幅榜"
-        case .losers: return "跌幅榜"
-        case .turnover: return "成交额榜"
-        case .industry:
-            return env.marketBoard.activeSector.map { "行业 · \($0.name)" } ?? "行业板块"
-        case .concept:
-            return env.marketBoard.activeSector.map { "概念 · \($0.name)" } ?? "概念板块"
-        case .limitUp: return "涨停池"
-        }
-    }
-
-    @ViewBuilder
-    private var headerTrailing: some View {
-        let wl = env.watchlist
-        let board = env.marketBoard
-        if wl.listMode == .watchlist {
-            Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
-        } else if (wl.listMode.isStockRanking && board.rankingLoading)
-                    || (wl.listMode.isSectorMode && board.sectorLoading)
-                    || (wl.listMode.isLimitUp && board.limitUpLoading) {
-            ProgressView().controlSize(.mini)
-        } else {
-            let n: Int = {
-                switch wl.listMode {
-                case .gainers, .losers, .turnover: return board.ranking.count
-                case .industry, .concept:
-                    return board.activeSector == nil ? board.sectors.count : board.sectorConstituents.count
-                case .limitUp: return board.limitUp.count
-                case .watchlist: return 0
-                }
-            }()
-            Tag(text: "\(n)", color: .dsTextSecondary)
-        }
-    }
-
-    private var renamePresented: Binding<Bool> {
-        Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })
-    }
-
-    private var modeStrip: some View {
-        HStack(spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(WatchlistMode.allCases) { mode in
-                        let active = env.watchlist.listMode == mode
-                        Button {
-                            env.setListMode(mode)
-                        } label: {
-                            Text(mode.label)
-                                .font(.dsMicro(medium: active))
-                                .foregroundStyle(active ? Color.dsAccent : Color.dsTextTertiary)
-                                .padding(.horizontal, 7)
-                                .frame(height: 22)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(active ? Color.dsAccent.opacity(0.14) : Color.clear)
-                                )
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            if env.watchlist.listMode == .watchlist {
+            PanelHeader(wl.activeBoard?.name ?? "自选") {
+                Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
                 Menu {
                     ForEach(WatchlistSort.allCases, id: \.self) { s in
                         Button(s.label) { env.watchlist.sort = s }
@@ -128,39 +28,27 @@ struct WatchlistPanel: View {
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.6))
                 }
                 .menuStyle(.borderlessButton)
-                .help("排序：\(env.watchlist.sort.label)")
-            } else {
-                Button {
-                    refreshCurrentMode()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color.dsTextSecondary)
-                        .frame(width: 22, height: 22)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.dsElevated.opacity(0.8)))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.6))
-                }
-                .buttonStyle(.plain)
-                .help("刷新")
+                .help("排序：\(wl.sort.label)")
             }
+            boardStrip
+            Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
+            watchlistColumns
+            watchlistBody
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 4)
+        .popover(isPresented: $showCreate, arrowEdge: .bottom) { namePopover() }
+        .alert("重命名板块", isPresented: renamePresented) {
+            TextField("名称", text: $renameText)
+            Button("取消", role: .cancel) {}
+            Button("确定") {
+                if let renameTarget { env.watchlist.renameBoard(renameTarget.id, name: renameText) }
+            }
+        } message: {
+            Text("最多 12 个字，不能和已有板块重名。")
+        }
     }
 
-    private func refreshCurrentMode() {
-        let mode = env.watchlist.listMode
-        if let kind = mode.rankKind {
-            Task { await env.marketBoard.refreshRanking(kind: kind) }
-        } else if let sk = mode.sectorKind {
-            if let active = env.marketBoard.activeSector {
-                Task { await env.marketBoard.openSector(active) }
-            } else {
-                Task { await env.marketBoard.refreshSectors(kind: sk) }
-            }
-        } else if mode.isLimitUp {
-            Task { await env.marketBoard.refreshLimitUp() }
-        }
+    private var renamePresented: Binding<Bool> {
+        Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })
     }
 
     private var boardStrip: some View {
@@ -265,8 +153,10 @@ struct WatchlistPanel: View {
                                 .contextMenu {
                                     rowMenu(code: code, boards: wl.boards)
                                     Divider()
-                                    Button("设涨破预警…") { addAlert(code: code, direction: .above) }
-                                    Button("设跌破预警…") { addAlert(code: code, direction: .below) }
+                                    Button("设涨破预警…") { addPriceAlert(code: code, direction: .above) }
+                                    Button("设跌破预警…") { addPriceAlert(code: code, direction: .below) }
+                                    Button("设涨幅预警…") { addPctAlert(code: code, up: true) }
+                                    Button("设跌幅预警…") { addPctAlert(code: code, up: false) }
                                 }
                         }
                     }
@@ -294,20 +184,15 @@ struct WatchlistPanel: View {
         Button("移出本板块", role: .destructive) { env.watchlist.remove(code) }
     }
 
-    private func addAlert(code: String, direction: PriceAlertDirection) {
+    private func addPriceAlert(code: String, direction: PriceAlertDirection) {
         guard let state = env.market.states[code], let q = state.quote else { return }
         let bump = q.lastPrice * Decimal(string: "0.02")!
-        let threshold: Decimal = {
-            switch direction {
-            case .above: return q.lastPrice + bump
-            case .below: return max(q.lastPrice - bump, Decimal(string: "0.01")!)
-            }
-        }()
+        let threshold: Decimal = direction == .above
+            ? q.lastPrice + bump
+            : max(q.lastPrice - bump, Decimal(string: "0.01")!)
         if env.alerts.add(
-            symbol: code,
-            name: state.symbol.name,
-            direction: direction,
-            threshold: threshold
+            symbol: code, name: state.symbol.name,
+            kind: .absolutePrice, direction: direction, threshold: threshold
         ) {
             env.trading.showToast(
                 "已设预警：\(state.symbol.name) \(direction.label) \(Fmt.price(threshold))",
@@ -316,9 +201,23 @@ struct WatchlistPanel: View {
         }
     }
 
-    private func namePopover(creating: Bool) -> some View {
+    private func addPctAlert(code: String, up: Bool) {
+        guard let state = env.market.states[code] else { return }
+        let pct = Decimal(string: "3")!
+        if env.alerts.add(
+            symbol: code, name: state.symbol.name,
+            kind: up ? .dayChangeUp : .dayChangeDown,
+            direction: up ? .above : .below,
+            threshold: pct
+        ) {
+            let tip = up ? "涨幅≥3%" : "跌幅≤-3%"
+            env.trading.showToast("已设预警：\(state.symbol.name) \(tip)", isError: false)
+        }
+    }
+
+    private func namePopover() -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(creating ? "新建板块" : "重命名")
+            Text("新建板块")
                 .font(.dsMicro(medium: true))
                 .foregroundStyle(Color.dsTextTertiary)
             TextField("例如 科技", text: $newName)

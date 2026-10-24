@@ -116,7 +116,9 @@ struct TopToolbar: View {
     private var workspaceSwitch: some View {
         HStack(spacing: 2) {
             workspaceButton(.trading, title: "交易", icon: "chart.bar.xaxis")
-                .help("交易终端：自选、K 线、五档与下单")
+                .help("交易终端：自选板块、K 线、五档与下单")
+            workspaceButton(.boards, title: "榜单", icon: "list.number")
+                .help("市场榜单：涨跌幅、成交额、行业/概念、涨停、龙虎榜")
             workspaceButton(.global, title: "全球", icon: "globe.asia.australia")
                 .help("全球市场：主要股指行情与走势（只读）")
         }
@@ -128,7 +130,11 @@ struct TopToolbar: View {
     private func workspaceButton(_ ws: AppEnvironment.Workspace, title: String, icon: String) -> some View {
         let selected = env.workspace == ws
         return Button {
-            env.workspace = ws
+            if ws == .boards {
+                env.showBoardsWorkspace()
+            } else {
+                env.workspace = ws
+            }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon)

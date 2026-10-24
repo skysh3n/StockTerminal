@@ -10,11 +10,11 @@ final class WatchParityTests: XCTestCase {
             direction: .above,
             threshold: Decimal(string: "1800")!
         )
-        XCTAssertNotNil(AlertEvaluator.shouldTrigger(alert: above, lastPrice: Decimal(string: "1800")!))
-        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: above, lastPrice: Decimal(string: "1799.99")!))
+        XCTAssertNotNil(AlertEvaluator.shouldTrigger(alert: above, lastPrice: Decimal(string: "1800")!, changePercent: 0))
+        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: above, lastPrice: Decimal(string: "1799.99")!, changePercent: 0))
 
         above.triggeredAt = Date()
-        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: above, lastPrice: Decimal(string: "1900")!))
+        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: above, lastPrice: Decimal(string: "1900")!, changePercent: 0))
 
         let below = PriceAlert(
             symbol: "SH600519",
@@ -22,8 +22,24 @@ final class WatchParityTests: XCTestCase {
             direction: .below,
             threshold: Decimal(string: "1700")!
         )
-        XCTAssertNotNil(AlertEvaluator.shouldTrigger(alert: below, lastPrice: Decimal(string: "1700")!))
-        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: below, lastPrice: Decimal(string: "1700.01")!))
+        XCTAssertNotNil(AlertEvaluator.shouldTrigger(alert: below, lastPrice: Decimal(string: "1700")!, changePercent: 0))
+        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: below, lastPrice: Decimal(string: "1700.01")!, changePercent: 0))
+    }
+
+    func testAlertEvaluatorDayChange() {
+        let up = PriceAlert(
+            symbol: "SH600000", name: "浦发",
+            kind: .dayChangeUp, direction: .above, threshold: 3
+        )
+        XCTAssertNotNil(AlertEvaluator.shouldTrigger(alert: up, lastPrice: 10, changePercent: 3.0))
+        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: up, lastPrice: 10, changePercent: 2.9))
+
+        let down = PriceAlert(
+            symbol: "SH600000", name: "浦发",
+            kind: .dayChangeDown, direction: .below, threshold: 3
+        )
+        XCTAssertNotNil(AlertEvaluator.shouldTrigger(alert: down, lastPrice: 10, changePercent: -3.0))
+        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: down, lastPrice: 10, changePercent: -2.9))
     }
 
     func testAlertEvaluatorDisabled() {
@@ -34,7 +50,7 @@ final class WatchParityTests: XCTestCase {
             threshold: 10,
             enabled: false
         )
-        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: alert, lastPrice: 99))
+        XCTAssertNil(AlertEvaluator.shouldTrigger(alert: alert, lastPrice: 99, changePercent: 0))
     }
 
     func testRankClientParse() throws {
