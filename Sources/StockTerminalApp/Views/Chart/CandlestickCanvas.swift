@@ -23,13 +23,46 @@ struct CandlestickCanvas: View {
         Canvas { ctx, size in
             guard !bars.isEmpty, layout.visible.count > 0 else { return }
             drawGrid(ctx: ctx, size: size)
-            drawSRLevels(ctx: ctx, size: size)
-            drawLastPriceLine(ctx: ctx, size: size)
             drawCandles(ctx: ctx)
             drawOverlayLines(ctx: ctx)
-            drawAxes(ctx: ctx, size: size)
+            // 先画坐标轴刻度，再画价签；价签占用的 Y 带跳过刻度，避免灰字叠在红/绿 pill 上
+            drawAxes(ctx: ctx, size: size, skipYs: axisLabelSkipYs())
+            drawSRLevels(ctx: ctx, size: size)
+            drawLastPriceLine(ctx: ctx, size: size)
             drawLegend(ctx: ctx)
         }
+    }
+
+    /// 右侧价格轴上会被最新价 / 支撑压力 pill 盖住的 Y 带（含错位后的标签位置）。
+    private func axisLabelSkipYs() -> [ClosedRange<CGFloat>] {
+        let half: CGFloat = 10
+        var bands: [ClosedRange<CGFloat>] = []
+        if let last = bars.last, layout.visible.upperBound >= bars.count {
+            let y = layout.y(price: last.close.doubleValue)
+            bands.append((y - half)...(y + half))
+        }
+        for midY in srAxisPillMidYs() {
+            bands.append((midY - half)...(midY + half))
+        }
+        return bands
+    }
+
+    /// 支撑压力右侧 pill 的中心 Y（与绘制时相同的错位规则）。
+    private func srAxisPillMidYs() -> [CGFloat] {
+        guard !srLevels.isEmpty else { return [] }
+        let plotBottom = layout.size.height - layout.bottomMargin
+        var lastLabelBottom: CGFloat = -100
+        var mids: [CGFloat] = []
+        for level in srLevels.sorted(by: { layout.y(price: $0.price) < layout.y(price: $1.price) }) {
+            let y = layout.y(price: level.price)
+            guard y > layout.topMargin, y < plotBottom else { continue }
+            var labelY = y - 8.5
+            if labelY < lastLabelBottom + 2 { labelY = lastLabelBottom + 2 }
+            labelY = min(max(labelY, layout.topMargin), plotBottom - 17)
+            lastLabelBottom = labelY + 17
+            mids.append(labelY + 8.5)
+        }
+        return mids
     }
 
     // MARK: - 支撑压力线
@@ -37,7 +70,8 @@ struct CandlestickCanvas: View {
     private func drawSRLevels(ctx: GraphicsContext, size: CGSize) {
         guard !srLevels.isEmpty else { return }
         let plotBottom = size.height - layout.bottomMargin
-        // 按 y 排序后若标签间距不足 15pt 则下移错位，保证多条压力/支撑靠近时都清晰可读
+        let tagW = layout.rightMargin - 6
+        // 价签画在右侧价格轴上（与最新价 pill 同列）；按 y 错开，避免互相叠字
         var lastLabelBottom: CGFloat = -100
         for level in srLevels.sorted(by: { layout.y(price: $0.price) < layout.y(price: $1.price) }) {
             let y = layout.y(price: level.price)
@@ -51,27 +85,20 @@ struct CandlestickCanvas: View {
                 line, with: .color(color.opacity(0.38)),
                 style: StrokeStyle(lineWidth: level.touches >= 3 ? 1.1 : 0.8, dash: [4, 3])
             )
-            // 标签：绘图区右缘半透明底签（避开左上 MA 图例与十字光标信息框，盖住网格/蜡烛也清晰可读）
-            let label = (isResistance ? "压力 " : "支撑 ")
-                + String(format: "%.2f", level.price)
-                + (level.touches > 1 ? " ×\(level.touches)" : "")
-            let labelW = CGFloat(label.count) * 6.0 + 10
-            var labelY = y - 7
-            if labelY < lastLabelBottom + 1 { labelY = lastLabelBottom + 1 }
-            labelY = min(labelY, plotBottom - 15)
-            lastLabelBottom = labelY + 14
-            let tagRect = CGRect(x: size.width - layout.rightMargin - labelW - 3,
-                                 y: labelY, width: labelW, height: 14)
-            ctx.fill(Path(roundedRect: tagRect, cornerRadius: 3),
-                     with: .color(Color.dsBgBase.opacity(0.78)))
-            ctx.stroke(Path(roundedRect: tagRect.insetBy(dx: 0.3, dy: 0.3), cornerRadius: 2.8),
-                       with: .color(color.opacity(0.35)), lineWidth: 0.6)
+            var labelY = y - 8.5
+            if labelY < lastLabelBottom + 2 { labelY = lastLabelBottom + 2 }
+            labelY = min(max(labelY, layout.topMargin), plotBottom - 17)
+            lastLabelBottom = labelY + 17
+            let rect = CGRect(x: size.width - layout.rightMargin + 3, y: labelY, width: tagW, height: 17)
+            ctx.fill(Path(roundedRect: rect, cornerRadius: 4), with: .color(color.opacity(0.92)))
+            ctx.stroke(Path(roundedRect: rect.insetBy(dx: 0.3, dy: 0.3), cornerRadius: 3.8),
+                       with: .color(.white.opacity(0.18)), lineWidth: 0.6)
             ctx.draw(
-                Text(label)
-                    .font(.system(size: 9, weight: .medium).monospacedDigit())
+                Text(String(format: "%.2f", level.price))
+                    .font(.system(size: 9.5, weight: .semibold).monospacedDigit())
                     .tracking(0.2)
-                    .foregroundColor(color.opacity(0.95)),
-                at: CGPoint(x: tagRect.minX + 5, y: tagRect.midY), anchor: .leading
+                    .foregroundColor(.white),
+                at: CGPoint(x: rect.midX, y: rect.midY), anchor: .center
             )
         }
     }
@@ -155,18 +182,22 @@ struct CandlestickCanvas: View {
 
     // MARK: - 坐标轴
 
-    private func drawAxes(ctx: GraphicsContext, size: CGSize) {
+    private func drawAxes(ctx: GraphicsContext, size: CGSize, skipYs: [ClosedRange<CGFloat>] = []) {
         let step = ChartLayout.niceStep(range: layout.priceMax - layout.priceMin)
         var p = ceil(layout.priceMin / step) * step
         let axisX = size.width - layout.rightMargin / 2
         while p <= layout.priceMax {
-            ctx.draw(
-                Text(String(format: "%.2f", p))
-                    .font(.system(size: 9.5, weight: .regular).monospacedDigit())
-                    .tracking(0.2)
-                    .foregroundColor(Color.dsTextTertiary),
-                at: CGPoint(x: axisX, y: layout.y(price: p)), anchor: .center
-            )
+            let y = layout.y(price: p)
+            let blocked = skipYs.contains { $0.contains(y) }
+            if !blocked {
+                ctx.draw(
+                    Text(String(format: "%.2f", p))
+                        .font(.system(size: 9.5, weight: .regular).monospacedDigit())
+                        .tracking(0.2)
+                        .foregroundColor(Color.dsTextTertiary),
+                    at: CGPoint(x: axisX, y: y), anchor: .center
+                )
+            }
             p += step
         }
         var axis = Path()

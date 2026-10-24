@@ -368,7 +368,8 @@ struct ChartPanel: View {
     @State private var overlayKind: MainOverlay = .ma
     /// 多副图：最多同时 2 个（含 VOL）。
     @State private var subPanes: [SubIndicator] = [.vol, .macd]
-    @State private var showSR = true
+    /// 默认关闭；用户打开后写入 UserDefaults，下次启动保持。
+    @AppStorage("chart.showSupportResistance") private var showSR = false
 
     var body: some View {
         @Bindable var wl = env.watchlist
