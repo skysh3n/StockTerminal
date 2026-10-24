@@ -135,7 +135,7 @@ struct GlobalIndexDetail: View {
                         viewport: viewport,
                         overlayKind: overlayKind,
                         showSR: false,
-                        allowsZoom: false,
+                        allowsZoom: true,
                         panSensitivity: 1.85
                     )
                     Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)

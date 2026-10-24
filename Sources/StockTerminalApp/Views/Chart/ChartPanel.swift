@@ -9,7 +9,7 @@ struct CandleChartView: View {
     let viewport: Viewport
     let overlayKind: MainOverlay
     let showSR: Bool
-    /// 是否允许捏合 / 传统鼠标滚轮缩放。全球指数关闭，只保留左右平移。
+    /// 是否允许捏合 / 传统鼠标滚轮缩放（时间轴）。交易/榜单/全球默认开启。
     var allowsZoom: Bool = true
     /// 平移灵敏度：>1 同样拖动距离移动更多根 K 线。
     var panSensitivity: CGFloat = 1
@@ -80,7 +80,6 @@ struct CandleChartView: View {
 }
 
 /// 时间轴手势：捏合缩放 + 触控板两指左右平移；两指上下不缩放。
-/// 全球指数可关缩放，仍保留触控板横向平移。
 private struct CandleAxisGestures: ViewModifier {
     let allowsZoom: Bool
     let allowsPan: Bool
