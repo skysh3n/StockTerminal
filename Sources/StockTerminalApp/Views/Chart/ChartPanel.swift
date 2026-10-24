@@ -140,8 +140,12 @@ struct ChartHeader: View {
     var fundFlow: FundFlowSnapshot? = nil
     /// 标题行左侧额外内容（例如全球详情的返回按钮）
     var leading: AnyView? = nil
+    /// 未在「自选」时显示加自选（全球指数详情不传）。
+    var showAddWatchlist: Bool = false
+    var onAddWatchlist: (() -> Void)? = nil
 
-    init(state: SymbolState?, fundFlow: FundFlowSnapshot? = nil) {
+    init(state: SymbolState?, fundFlow: FundFlowSnapshot? = nil,
+         showAddWatchlist: Bool = false, onAddWatchlist: (() -> Void)? = nil) {
         let q = state?.quote
         self.name = state?.symbol.name ?? "--"
         if let sym = state?.symbol {
@@ -164,6 +168,8 @@ struct ChartHeader: View {
         self.turnover = q?.turnover
         self.fundFlow = fundFlow
         self.leading = nil
+        self.showAddWatchlist = showAddWatchlist
+        self.onAddWatchlist = onAddWatchlist
     }
 
     init(
@@ -180,7 +186,9 @@ struct ChartHeader: View {
         volume: Int64? = nil,
         turnover: Decimal? = nil,
         fundFlow: FundFlowSnapshot? = nil,
-        leading: AnyView? = nil
+        leading: AnyView? = nil,
+        showAddWatchlist: Bool = false,
+        onAddWatchlist: (() -> Void)? = nil
     ) {
         self.name = name
         self.tags = tags.map { (text: $0.0, color: $0.1) }
@@ -196,6 +204,8 @@ struct ChartHeader: View {
         self.turnover = turnover
         self.fundFlow = fundFlow
         self.leading = leading
+        self.showAddWatchlist = showAddWatchlist
+        self.onAddWatchlist = onAddWatchlist
     }
 
     var body: some View {
@@ -209,6 +219,27 @@ struct ChartHeader: View {
                         .foregroundStyle(Color.dsTextPrimary)
                     ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
                         Tag(text: tag.text, color: tag.color)
+                    }
+                    if showAddWatchlist {
+                        Button {
+                            onAddWatchlist?()
+                        } label: {
+                            Text("加自选")
+                                .font(.dsMicro(medium: true))
+                                .foregroundStyle(Color.dsAccent)
+                                .padding(.horizontal, 8)
+                                .frame(height: 22)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .fill(Color.dsAccent.opacity(0.12))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .stroke(Color.dsAccent.opacity(0.4), lineWidth: 0.6)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("加入内置自选板块")
                     }
                 }
 
@@ -376,9 +407,20 @@ struct ChartPanel: View {
         let code = wl.selectedCode
         let state = code.flatMap { env.market.states[$0] }
         let series = env.market.activeSeries
+        let needAdd = code.map { !env.watchlist.isInSystemWatchlist($0) } ?? false
 
         VStack(spacing: 0) {
-            ChartHeader(state: state, fundFlow: env.marketBoard.fundFlow)
+            ChartHeader(
+                state: state,
+                fundFlow: env.marketBoard.fundFlow,
+                showAddWatchlist: needAdd,
+                onAddWatchlist: {
+                    guard let code, let sym = env.watchlist.symbol(for: code) ?? state?.symbol else { return }
+                    env.watchlist.register(sym)
+                    env.watchlist.addToSystemWatchlist(code)
+                    env.trading.showToast("已加入自选：\(sym.name)", isError: false)
+                }
+            )
 
             HStack(spacing: 12) {
                 HStack(spacing: 1) {

@@ -68,7 +68,7 @@
 		5A1000000000000000000E12 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				5A1000000000000000000F03 /* StockTerminal.app */,
+				5A1000000000000000000F03 /* 量化终端.app */,
 				5A1000000000000000000F04 /* TradingCoreTests.xctest */,
 			);
 			name = Products;
@@ -97,8 +97,8 @@
 				5A1000000000000000000D01 /* TradingCore */,
 				5A1000000000000000000D02 /* DesignSystem */,
 			);
-			productName = StockTerminal;
-			productReference = 5A1000000000000000000F03 /* StockTerminal.app */;
+			productName = "量化终端";
+			productReference = 5A1000000000000000000F03 /* 量化终端.app */;
 			productType = "com.apple.product-type.application";
 		};
 		5A1000000000000000000E22 /* TradingCoreTests */ = {
@@ -250,9 +250,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				EXECUTABLE_NAME = StockTerminal;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.local.stockterminal;
-				PRODUCT_NAME = StockTerminal;
+				PRODUCT_NAME = "量化终端";
 			};
 			name = Debug;
 		};
@@ -271,9 +272,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				EXECUTABLE_NAME = StockTerminal;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.local.stockterminal;
-				PRODUCT_NAME = StockTerminal;
+				PRODUCT_NAME = "量化终端";
 			};
 			name = Release;
 		};

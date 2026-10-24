@@ -194,6 +194,17 @@ final class WatchlistStore {
 
     func contains(_ code: String) -> Bool { codes.contains(code) }
 
+    /// 是否在内置「自选」板块中（详情页「加自选」依据）。
+    func isInSystemWatchlist(_ code: String) -> Bool {
+        boards.first(where: \.system)?.codes.contains(code) ?? false
+    }
+
+    /// 加入内置「自选」板块。
+    func addToSystemWatchlist(_ code: String) {
+        guard let id = boards.first(where: \.system)?.id else { return }
+        add(code, to: id)
+    }
+
     func register(_ symbol: Symbol) {
         guard universeMap[symbol.fullCode] == nil else { return }
         universeMap[symbol.fullCode] = symbol

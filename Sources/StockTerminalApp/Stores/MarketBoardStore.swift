@@ -132,29 +132,43 @@ final class MarketBoardStore {
         Task { await refreshOverview() }
     }
 
-    /// 全屏榜单：并行刷新各块。
+    /// 预热常用榜（进交易时后台拉一次）。
     func refreshOverview() async {
         overviewLoading = true
         defer { overviewLoading = false }
         async let g: Void = refreshRanking(kind: .gainers)
         async let l: Void = refreshRanking(kind: .losers)
         async let t: Void = refreshRanking(kind: .turnover)
-        async let tr: Void = refreshRanking(kind: .turnoverRate)
-        async let am: Void = refreshRanking(kind: .amplitude)
-        async let ind: Void = refreshSectors(kind: .industry)
-        async let con: Void = refreshSectors(kind: .concept)
-        async let up: Void = refreshLimitUp()
-        async let down: Void = refreshLimitDown()
-        async let bill: Void = refreshBillboard()
-        _ = await (g, l, t, tr, am, ind, con, up, down, bill)
+        _ = await (g, l, t)
     }
 
-    /// 进入「榜单」或切换模式时调用。
+    /// 切换榜种芯片时：只刷新当前榜，行为对齐自选切板块。
     func applyMode(_ mode: BoardListMode) async {
         listMode = mode
-        if mode.rankKind != nil || mode.isLimitUp || mode.isLimitDown || mode.isBillboard || mode.isSectorMode {
-            // 全屏模式：整页刷新；单列模式仍按需
-            await refreshOverview()
+        rankingLoading = mode.isStockRanking
+        if let kind = mode.rankKind {
+            rankingKind = kind
+            await refreshRanking(kind: kind)
+            ranking = items(for: kind)
+            rankingLoading = false
+        } else if let sk = mode.sectorKind {
+            await refreshSectors(kind: sk)
+        } else if mode.isLimitUp {
+            await refreshLimitUp()
+        } else if mode.isLimitDown {
+            await refreshLimitDown()
+        } else if mode.isBillboard {
+            await refreshBillboard()
+        }
+    }
+
+    private func items(for kind: MarketRankKind) -> [MarketRankItem] {
+        switch kind {
+        case .gainers: return gainers
+        case .losers: return losers
+        case .turnover: return turnoverBoard
+        case .turnoverRate: return turnoverRateBoard
+        case .amplitude: return amplitudeBoard
         }
     }
 
