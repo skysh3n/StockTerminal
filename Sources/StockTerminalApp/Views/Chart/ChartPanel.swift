@@ -9,9 +9,6 @@ struct CandleChartView: View {
     let viewport: Viewport
     let overlayKind: MainOverlay
     let showSR: Bool
-    var hLines: [Double] = []
-    var drawHLine: Bool = false
-    var onAddHLine: ((Double) -> Void)? = nil
     /// 是否允许捏合 / 传统鼠标滚轮缩放。全球指数关闭，只保留左右平移。
     var allowsZoom: Bool = true
     /// 平移灵敏度：>1 同样拖动距离移动更多根 K 线。
@@ -33,8 +30,7 @@ struct CandleChartView: View {
                 } else {
                     CandlestickCanvas(
                         bars: bars, lines: lines, srLevels: srLevels, layout: layout,
-                        preClose: series.preClose?.doubleValue, tf: series.timeFrame,
-                        hLines: hLines
+                        preClose: series.preClose?.doubleValue, tf: series.timeFrame
                     )
                     CrosshairCanvas(
                         bars: bars, layout: layout, tf: series.timeFrame,
@@ -52,7 +48,6 @@ struct CandleChartView: View {
             .gesture(
                 DragGesture(minimumDistance: 4)
                     .onChanged { g in
-                        guard !drawHLine else { return }
                         viewport.pan(
                             translationX: g.translation.width * panSensitivity,
                             spacing: layout.candleSpacing,
@@ -62,20 +57,14 @@ struct CandleChartView: View {
                     .onEnded { _ in viewport.panStartOffset = nil }
             )
             .modifier(CandleAxisGestures(
-                allowsZoom: allowsZoom && !drawHLine,
-                allowsPan: !drawHLine,
+                allowsZoom: allowsZoom,
+                allowsPan: true,
                 viewport: viewport,
                 spacing: layout.candleSpacing,
                 totalBars: bars.count,
                 panSensitivity: panSensitivity
             ))
             .onTapGesture(count: 2) { viewport.reset() }
-            .simultaneousGesture(
-                SpatialTapGesture().onEnded { value in
-                    guard drawHLine, !bars.isEmpty else { return }
-                    onAddHLine?(layout.price(y: value.location.y))
-                }
-            )
         }
     }
 
@@ -373,7 +362,7 @@ struct MiniTab: View {
     }
 }
 
-/// 中栏图表面板：头部 + 周期/叠加指标 + 主图 + 多副图 + 水平画线
+/// 中栏图表面板：头部 + 周期/叠加指标 + 主图 + 多副图
 struct ChartPanel: View {
     @Environment(AppEnvironment.self) private var env
     @State private var viewport = Viewport()
@@ -381,15 +370,12 @@ struct ChartPanel: View {
     /// 多副图：最多同时 2 个（含 VOL）。
     @State private var subPanes: [SubIndicator] = [.vol, .macd]
     @State private var showSR = true
-    @State private var drawHLine = false
-    @State private var hLinesBySymbol: [String: [Double]] = [:]
 
     var body: some View {
         @Bindable var wl = env.watchlist
         let code = wl.selectedCode
         let state = code.flatMap { env.market.states[$0] }
         let series = env.market.activeSeries
-        let hLines = code.flatMap { hLinesBySymbol[$0] } ?? []
 
         VStack(spacing: 0) {
             ChartHeader(state: state, fundFlow: env.marketBoard.fundFlow)
@@ -418,19 +404,6 @@ struct ChartPanel: View {
                         .padding(.horizontal, 3)
                     MiniTab(label: "支撑压力", active: showSR) { showSR.toggle() }
                         .help("支撑压力：自动识别摆动高低点并聚类")
-                    MiniTab(label: "水平线", active: drawHLine) {
-                        drawHLine.toggle()
-                    }
-                    .help("画水平线：开启后单击主图锚定价位；再点清除该标的全部水平线")
-                    if !hLines.isEmpty {
-                        Button("清线") {
-                            if let code { hLinesBySymbol[code] = [] }
-                        }
-                        .buttonStyle(.plain)
-                        .font(.dsMicro())
-                        .foregroundStyle(Color.dsTextTertiary)
-                        .help("清除当前标的水平线")
-                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -447,15 +420,7 @@ struct ChartPanel: View {
                     VStack(spacing: 0) {
                         CandleChartView(
                             series: s, viewport: viewport,
-                            overlayKind: overlayKind, showSR: showSR,
-                            hLines: hLines, drawHLine: drawHLine,
-                            onAddHLine: { price in
-                                guard let code else { return }
-                                var lines = hLinesBySymbol[code] ?? []
-                                lines.append(price)
-                                if lines.count > 8 { lines.removeFirst(lines.count - 8) }
-                                hLinesBySymbol[code] = lines
-                            }
+                            overlayKind: overlayKind, showSR: showSR
                         )
                         Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
                         subPaneBar
@@ -477,10 +442,7 @@ struct ChartPanel: View {
                 }
             }
         }
-        .onChange(of: code) { _, _ in
-            viewport.reset()
-            drawHLine = false
-        }
+        .onChange(of: code) { _, _ in viewport.reset() }
         .onChange(of: wl.selectedTimeFrame) { _, _ in viewport.reset() }
     }
 
