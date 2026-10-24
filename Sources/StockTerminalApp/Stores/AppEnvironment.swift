@@ -36,6 +36,8 @@ final class AppEnvironment {
     let alerts = AlertStore()
     /// 选中标的公告。
     let notices = NoticeStore()
+    /// 市场资讯标题流。
+    let news = NewsStore()
 
     /// 仅在 `isReady` 之后由界面读取。
     var market: MarketStore { marketStore! }
@@ -109,10 +111,12 @@ final class AppEnvironment {
         market.prepareSymbols(AShareIndices.all)
         marketBoard.start(usingRealMarket: usingRealMarket, market: market)
         notices.configure(usingRealMarket: usingRealMarket)
+        news.configure(usingRealMarket: usingRealMarket)
         alerts.start(market: market)
         if let code = watchlist.selectedCode {
             notices.load(for: code)
         }
+        Task { await news.refresh() }
 
         isReady = true
     }
@@ -128,12 +132,18 @@ final class AppEnvironment {
         Task { await self.market.select(symbol: sym, timeFrame: tf) }
     }
 
-    /// 左栏切到榜单模式时刷新对应榜。
+    /// 左栏切模式时刷新对应数据源。
     func setListMode(_ mode: WatchlistMode) {
         guard isReady else { return }
         watchlist.listMode = mode
         if let kind = mode.rankKind {
             Task { await marketBoard.refreshRanking(kind: kind) }
+        } else if let sk = mode.sectorKind {
+            Task { await marketBoard.refreshSectors(kind: sk) }
+        } else if mode.isLimitUp {
+            Task { await marketBoard.refreshLimitUp() }
+        } else {
+            marketBoard.closeSector()
         }
     }
 

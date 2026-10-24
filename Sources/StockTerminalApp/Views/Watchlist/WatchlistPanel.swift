@@ -14,13 +14,7 @@ struct WatchlistPanel: View {
         @Bindable var wl = env.watchlist
         VStack(spacing: 0) {
             PanelHeader(headerTitle) {
-                if wl.listMode == .watchlist {
-                    Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
-                } else if env.marketBoard.rankingLoading {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Tag(text: "\(env.marketBoard.ranking.count)", color: .dsTextSecondary)
-                }
+                headerTrailing
             }
             modeStrip
             if wl.listMode == .watchlist {
@@ -30,7 +24,16 @@ struct WatchlistPanel: View {
                 watchlistBody
             } else {
                 Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
-                RankListPanel()
+                switch wl.listMode {
+                case .gainers, .losers, .turnover:
+                    RankListPanel()
+                case .industry, .concept:
+                    SectorListPanel()
+                case .limitUp:
+                    LimitUpListPanel()
+                case .watchlist:
+                    EmptyView()
+                }
             }
         }
         .popover(isPresented: $showCreate, arrowEdge: .bottom) { namePopover(creating: true) }
@@ -51,6 +54,35 @@ struct WatchlistPanel: View {
         case .gainers: return "涨幅榜"
         case .losers: return "跌幅榜"
         case .turnover: return "成交额榜"
+        case .industry:
+            return env.marketBoard.activeSector.map { "行业 · \($0.name)" } ?? "行业板块"
+        case .concept:
+            return env.marketBoard.activeSector.map { "概念 · \($0.name)" } ?? "概念板块"
+        case .limitUp: return "涨停池"
+        }
+    }
+
+    @ViewBuilder
+    private var headerTrailing: some View {
+        let wl = env.watchlist
+        let board = env.marketBoard
+        if wl.listMode == .watchlist {
+            Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
+        } else if (wl.listMode.isStockRanking && board.rankingLoading)
+                    || (wl.listMode.isSectorMode && board.sectorLoading)
+                    || (wl.listMode.isLimitUp && board.limitUpLoading) {
+            ProgressView().controlSize(.mini)
+        } else {
+            let n: Int = {
+                switch wl.listMode {
+                case .gainers, .losers, .turnover: return board.ranking.count
+                case .industry, .concept:
+                    return board.activeSector == nil ? board.sectors.count : board.sectorConstituents.count
+                case .limitUp: return board.limitUp.count
+                case .watchlist: return 0
+                }
+            }()
+            Tag(text: "\(n)", color: .dsTextSecondary)
         }
     }
 
@@ -59,26 +91,29 @@ struct WatchlistPanel: View {
     }
 
     private var modeStrip: some View {
-        HStack(spacing: 2) {
-            ForEach(WatchlistMode.allCases) { mode in
-                let active = env.watchlist.listMode == mode
-                Button {
-                    env.setListMode(mode)
-                } label: {
-                    Text(mode.label)
-                        .font(.dsMicro(medium: active))
-                        .foregroundStyle(active ? Color.dsAccent : Color.dsTextTertiary)
-                        .padding(.horizontal, 7)
-                        .frame(height: 22)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(active ? Color.dsAccent.opacity(0.14) : Color.clear)
-                        )
-                        .contentShape(Rectangle())
+        HStack(spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(WatchlistMode.allCases) { mode in
+                        let active = env.watchlist.listMode == mode
+                        Button {
+                            env.setListMode(mode)
+                        } label: {
+                            Text(mode.label)
+                                .font(.dsMicro(medium: active))
+                                .foregroundStyle(active ? Color.dsAccent : Color.dsTextTertiary)
+                                .padding(.horizontal, 7)
+                                .frame(height: 22)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(active ? Color.dsAccent.opacity(0.14) : Color.clear)
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
             }
-            Spacer(minLength: 0)
             if env.watchlist.listMode == .watchlist {
                 Menu {
                     ForEach(WatchlistSort.allCases, id: \.self) { s in
@@ -96,9 +131,7 @@ struct WatchlistPanel: View {
                 .help("排序：\(env.watchlist.sort.label)")
             } else {
                 Button {
-                    if let kind = env.watchlist.listMode.rankKind {
-                        Task { await env.marketBoard.refreshRanking(kind: kind) }
-                    }
+                    refreshCurrentMode()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 9, weight: .semibold))
@@ -108,11 +141,26 @@ struct WatchlistPanel: View {
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.6))
                 }
                 .buttonStyle(.plain)
-                .help("刷新榜单")
+                .help("刷新")
             }
         }
         .padding(.horizontal, 10)
         .padding(.bottom, 4)
+    }
+
+    private func refreshCurrentMode() {
+        let mode = env.watchlist.listMode
+        if let kind = mode.rankKind {
+            Task { await env.marketBoard.refreshRanking(kind: kind) }
+        } else if let sk = mode.sectorKind {
+            if let active = env.marketBoard.activeSector {
+                Task { await env.marketBoard.openSector(active) }
+            } else {
+                Task { await env.marketBoard.refreshSectors(kind: sk) }
+            }
+        } else if mode.isLimitUp {
+            Task { await env.marketBoard.refreshLimitUp() }
+        }
     }
 
     private var boardStrip: some View {

@@ -17,6 +17,7 @@ final class AlertStore {
     }
 
     func start(market: MarketStore) {
+        AlertNotifier.prepare()
         evalTask?.cancel()
         evalTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -73,7 +74,12 @@ final class AlertStore {
         }
         if dirty { persist() }
         if let first = fired.first {
-            pendingToast = fired.count == 1 ? "预警：\(first)" : "预警：\(first) 等 \(fired.count) 条"
+            let toast = fired.count == 1 ? "预警：\(first)" : "预警：\(first) 等 \(fired.count) 条"
+            pendingToast = toast
+            AlertNotifier.notify(
+                title: "量化终端 · 价格预警",
+                body: toast.replacingOccurrences(of: "预警：", with: "")
+            )
         }
     }
 

@@ -10,12 +10,15 @@ struct WatchBoard: Identifiable, Hashable {
     var codes: [String]
 }
 
-/// 左栏列表模式：自选板块 或 全市场榜单。
+/// 左栏列表模式：自选 / 个股榜 / 板块 / 涨停池。
 enum WatchlistMode: String, CaseIterable, Identifiable {
     case watchlist
     case gainers
     case losers
     case turnover
+    case industry
+    case concept
+    case limitUp
 
     var id: String { rawValue }
 
@@ -25,17 +28,32 @@ enum WatchlistMode: String, CaseIterable, Identifiable {
         case .gainers: return "涨幅"
         case .losers: return "跌幅"
         case .turnover: return "成交额"
+        case .industry: return "行业"
+        case .concept: return "概念"
+        case .limitUp: return "涨停"
         }
     }
 
     var rankKind: MarketRankKind? {
         switch self {
-        case .watchlist: return nil
         case .gainers: return .gainers
         case .losers: return .losers
         case .turnover: return .turnover
+        default: return nil
         }
     }
+
+    var sectorKind: SectorKind? {
+        switch self {
+        case .industry: return .industry
+        case .concept: return .concept
+        default: return nil
+        }
+    }
+
+    var isStockRanking: Bool { rankKind != nil }
+    var isSectorMode: Bool { sectorKind != nil }
+    var isLimitUp: Bool { self == .limitUp }
 }
 
 /// 自选列表排序。

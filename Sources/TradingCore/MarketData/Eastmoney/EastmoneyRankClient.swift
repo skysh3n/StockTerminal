@@ -5,13 +5,7 @@ public struct EastmoneyRankClient: Sendable {
     private let session: URLSession
 
     public init() {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 10
-        config.httpAdditionalHeaders = [
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-            "Referer": "https://quote.eastmoney.com/",
-        ]
-        session = URLSession(configuration: config)
+        session = EastmoneyHTTP.makeSession(referer: "https://quote.eastmoney.com/")
     }
 
     /// A 股过滤串（沪深京主板/创业/科创）。
@@ -27,11 +21,9 @@ public struct EastmoneyRankClient: Sendable {
         }()
         let pz = min(max(limit, 1), 50)
         let fields = "f12,f13,f14,f2,f3,f4,f5,f6"
-        let urlString =
-            "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=\(pz)&po=\(po)&np=1&fltt=2&invt=2&fid=\(fid)&fs=\(Self.aShareFS)&fields=\(fields)"
-        guard let url = URL(string: urlString) else { return [] }
-
-        let (data, _) = try await session.data(from: url)
+        let query =
+            "pn=1&pz=\(pz)&po=\(po)&np=1&fltt=2&invt=2&fid=\(fid)&fs=\(Self.aShareFS)&fields=\(fields)"
+        let data = try await EastmoneyHTTP.fetchClist(session: session, query: query)
         return try Self.parse(data: data, limit: pz)
     }
 

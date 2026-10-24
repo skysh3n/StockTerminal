@@ -30,7 +30,7 @@ struct RankListPanel: View {
                 ScrollView {
                     LazyVStack(spacing: 1) {
                         ForEach(board.ranking) { item in
-                            RankRow(
+                            RankRowView(
                                 item: item,
                                 selected: env.watchlist.selectedCode == item.symbol.fullCode,
                                 showTurnover: board.rankingKind == .turnover
@@ -52,7 +52,7 @@ struct RankListPanel: View {
     }
 }
 
-private struct RankRow: View {
+struct RankRowView: View {
     let item: MarketRankItem
     let selected: Bool
     let showTurnover: Bool

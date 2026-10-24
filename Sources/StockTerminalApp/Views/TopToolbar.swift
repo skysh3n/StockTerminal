@@ -170,14 +170,25 @@ struct TopToolbar: View {
 
     private var sourceBadge: some View {
         let real = env.usingRealMarket
-        let open = MarketSession.isOpen()
-        let text: String = real ? (open ? "实时行情" : "实时行情 · 休市") : "模拟数据"
-        let dotColor: Color = real ? (open ? .dsDown : .dsTextTertiary) : .dsAccent
+        let phase = MarketSession.phase()
+        let active = phase.isActiveTrading
+        let text: String = {
+            if !real { return "模拟数据" }
+            switch phase {
+            case .continuousAM, .continuousPM: return "实时行情"
+            case .callAuction: return "实时行情 · 集合竞价"
+            case .lunch: return "实时行情 · 午休"
+            case .preOpen: return "实时行情 · 开盘前"
+            case .afterClose: return "实时行情 · 已收盘"
+            case .weekend, .closed: return "实时行情 · 休市"
+            }
+        }()
+        let dotColor: Color = real ? (active ? .dsDown : .dsTextTertiary) : .dsAccent
         return HStack(spacing: 5) {
             Circle()
                 .fill(dotColor)
                 .frame(width: 5, height: 5)
-                .shadow(color: dotColor.opacity(open ? 0.6 : 0), radius: 3)
+                .shadow(color: dotColor.opacity(active ? 0.6 : 0), radius: 3)
             Text(text)
                 .font(.dsMicro(medium: true))
                 .tracking(0.3)
@@ -187,7 +198,7 @@ struct TopToolbar: View {
         .background(RoundedRectangle(cornerRadius: 4).fill(Color.dsElevated.opacity(0.8)))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.6))
         .help(real
-              ? "数据源：腾讯行情（快照 / K线 / 五档）+ 东方财富（逐笔）。休市时展示最近交易日数据；交易为模拟撮合。"
+              ? "会话：\(phase.label)。数据源：腾讯行情（快照 / K线 / 五档）+ 东方财富（逐笔）；交易为模拟撮合。"
               : "内置模拟行情（真实数据源探测失败或当前离线）")
     }
 

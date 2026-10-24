@@ -13,6 +13,7 @@ struct BottomTabs: View {
         case orders = "委托"
         case trades = "成交"
         case notices = "公告"
+        case news = "资讯"
         case alerts = "预警"
         var id: String { rawValue }
     }
@@ -39,6 +40,7 @@ struct BottomTabs: View {
                 case .orders: OrdersTable()
                 case .trades: TradesTable()
                 case .notices: NoticesTable()
+                case .news: NewsHeadlinesTable()
                 case .alerts: AlertsTable()
                 }
             }
@@ -55,6 +57,7 @@ struct BottomTabs: View {
             case .orders: return env.trading.orders.count
             case .trades: return env.trading.trades.count
             case .notices: return env.notices.items.count
+            case .news: return env.news.items.count
             case .alerts: return env.alerts.alerts.count
             }
         }()
@@ -62,6 +65,8 @@ struct BottomTabs: View {
             tab = t
             if t == .notices {
                 env.notices.load(for: env.watchlist.selectedCode)
+            } else if t == .news {
+                Task { await env.news.refresh() }
             }
         } label: {
             HStack(spacing: 5) {
@@ -421,6 +426,104 @@ private struct NoticeRow: View {
         .rowHover(radius: 5)
         .padding(.horizontal, 4)
         .help(notice.url == nil ? notice.title : "在浏览器打开公告")
+    }
+}
+
+// MARK: - 资讯
+
+struct NewsHeadlinesTable: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        let store = env.news
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                headerCell("时间", 110, .leading)
+                headerCell("标题", 280, .leading)
+                Spacer(minLength: 0)
+                Button {
+                    Task { await env.news.refresh() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.dsTextTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("刷新资讯")
+                .padding(.trailing, 8)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+
+            Rectangle().fill(Color.dsBorder.opacity(0.5)).frame(height: 0.5)
+
+            if store.loading && store.items.isEmpty {
+                EmptyHint(text: "加载资讯…")
+            } else if store.items.isEmpty {
+                EmptyHint(text: store.error ?? "暂无资讯")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 1) {
+                        ForEach(store.items) { item in
+                            NewsHeadlineRow(item: item)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+        }
+    }
+}
+
+private struct NewsHeadlineRow: View {
+    let item: NewsHeadline
+
+    var body: some View {
+        Button {
+            if let url = item.url { NSWorkspace.shared.open(url) }
+        } label: {
+            HStack(alignment: .top, spacing: 0) {
+                cell(shortTime(item.showTime), 110, .leading, .dsTextTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(item.url == nil ? Color.dsTextSecondary : Color.dsTextPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    if !item.mediaName.isEmpty {
+                        Text(item.mediaName)
+                            .font(.dsMicro())
+                            .foregroundStyle(Color.dsTextTertiary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if item.url != nil {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Color.dsTextTertiary)
+                        .padding(.top, 2)
+                        .padding(.trailing, 4)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(item.url == nil)
+        .rowHover(radius: 5)
+        .padding(.horizontal, 4)
+        .help(item.url == nil ? item.title : "在浏览器打开")
+    }
+
+    private func shortTime(_ s: String) -> String {
+        // "2026-10-24 09:56:00" → "10-24 09:56"
+        if s.count >= 16 {
+            let start = s.index(s.startIndex, offsetBy: 5)
+            let end = s.index(s.startIndex, offsetBy: 16)
+            return String(s[start..<end])
+        }
+        return s
     }
 }
 

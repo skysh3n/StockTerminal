@@ -59,15 +59,17 @@ struct IndexStrip: View {
     }
 
     private var sessionHint: some View {
-        let open = MarketSession.isOpen()
-        return Text(open ? "交易中" : "已休市")
+        let phase = MarketSession.phase()
+        let active = phase.isActiveTrading
+        return Text(phase.shortLabel)
             .font(.dsMicro())
             .tracking(0.3)
-            .foregroundStyle(open ? Color.dsDown : Color.dsTextTertiary)
+            .foregroundStyle(active ? Color.dsDown : Color.dsTextTertiary)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 4).fill(Color.dsElevated.opacity(0.7)))
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.5))
+            .help(phase.label)
     }
 
     private func shortName(_ name: String) -> String {
