@@ -16,20 +16,63 @@ public struct EastmoneyLimitUpClient: Sendable {
 
     /// 拉取涨跌幅 ≥ 9.8% 的标的，再按各自涨停幅度过滤「触及/贴近涨停」。
     public func limitUpPool(limit: Int = 50) async throws -> [MarketRankItem] {
-        let urlString =
-            "https://data.eastmoney.com/dataapi/xuangu/list?st=CHANGE_RATE&sr=-1&ps=\(min(max(limit * 2, 20), 100))&p=1&sty=SECURITY_CODE,SECURITY_NAME_ABBR,NEW_PRICE,CHANGE_RATE,DEAL_AMOUNT,SECUCODE&filter=(CHANGE_RATE%3E=9.8)"
-        guard let url = URL(string: urlString) else { return [] }
-        let (data, _) = try await session.data(from: url)
-        return try Self.parse(data: data, limit: limit)
+        try await xuanguPool(
+            filter: "(CHANGE_RATE%3E=9.8)",
+            sortAsc: false,
+            limit: limit,
+            nearLimit: true
+        )
     }
 
-    public static func parse(data: Data, limit: Int) throws -> [MarketRankItem] {
+    /// 跌停 / 贴近跌停池。
+    public func limitDownPool(limit: Int = 50) async throws -> [MarketRankItem] {
+        try await xuanguPool(
+            filter: "(CHANGE_RATE%3C=-9.8)",
+            sortAsc: true,
+            limit: limit,
+            nearLimit: true,
+            down: true
+        )
+    }
+
+    /// 跌幅榜兜底：涨跌幅升序且 ≤0（clist 忽略 po 时用）。
+    public func losersPool(limit: Int = 40) async throws -> [MarketRankItem] {
+        try await xuanguPool(
+            filter: "(CHANGE_RATE%3C=0)",
+            sortAsc: true,
+            limit: limit,
+            nearLimit: false
+        )
+    }
+
+    private func xuanguPool(
+        filter: String,
+        sortAsc: Bool,
+        limit: Int,
+        nearLimit: Bool,
+        down: Bool = false
+    ) async throws -> [MarketRankItem] {
+        let sr = sortAsc ? 1 : -1
+        let ps = min(max(limit * 2, 20), 100)
+        let urlString =
+            "https://data.eastmoney.com/dataapi/xuangu/list?st=CHANGE_RATE&sr=\(sr)&ps=\(ps)&p=1&sty=SECURITY_CODE,SECURITY_NAME_ABBR,NEW_PRICE,CHANGE_RATE,DEAL_AMOUNT,SECUCODE&filter=\(filter)"
+        guard let url = URL(string: urlString) else { return [] }
+        let (data, _) = try await session.data(from: url)
+        return try Self.parse(data: data, limit: limit, nearLimit: nearLimit, down: down)
+    }
+
+    public static func parse(
+        data: Data,
+        limit: Int,
+        nearLimit: Bool = true,
+        down: Bool = false
+    ) throws -> [MarketRankItem] {
         guard
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let result = json["result"] as? [String: Any],
             let rows = result["data"] as? [[String: Any]]
         else {
-            throw ServiceError.backend("涨停池解析失败")
+            throw ServiceError.backend("选股榜解析失败")
         }
         var out: [MarketRankItem] = []
         for row in rows {
@@ -39,9 +82,14 @@ public struct EastmoneyLimitUpClient: Sendable {
             else { continue }
             let pct = doubleValue(row["CHANGE_RATE"])
             let symbol = Symbol(code: code, exchange: exchange, name: name)
-            // 贴近各自板涨停：主板 ≥9.8，创/科 ≥19.5，北交 ≥29.5
-            let threshold = limitThreshold(for: symbol)
-            guard pct + 0.05 >= threshold else { continue }
+            if nearLimit {
+                let threshold = limitThreshold(for: symbol)
+                if down {
+                    guard pct - 0.05 <= -threshold else { continue }
+                } else {
+                    guard pct + 0.05 >= threshold else { continue }
+                }
+            }
             let price = decimalValue(row["NEW_PRICE"])
             guard price > 0 else { continue }
             let turnover = decimalValue(row["DEAL_AMOUNT"])

@@ -2,14 +2,17 @@ import Foundation
 import Observation
 import TradingCore
 
-/// 「榜单」工作区左栏模式（与自选完全分离）。
+/// 「榜单」工作区左栏模式（旧单列 UI / 刷新入口仍可用）。
 enum BoardListMode: String, CaseIterable, Identifiable {
     case gainers
     case losers
     case turnover
+    case turnoverRate
+    case amplitude
     case industry
     case concept
     case limitUp
+    case limitDown
     case billboard
 
     var id: String { rawValue }
@@ -19,9 +22,12 @@ enum BoardListMode: String, CaseIterable, Identifiable {
         case .gainers: return "涨幅"
         case .losers: return "跌幅"
         case .turnover: return "成交额"
+        case .turnoverRate: return "换手"
+        case .amplitude: return "振幅"
         case .industry: return "行业"
         case .concept: return "概念"
         case .limitUp: return "涨停"
+        case .limitDown: return "跌停"
         case .billboard: return "龙虎榜"
         }
     }
@@ -31,6 +37,8 @@ enum BoardListMode: String, CaseIterable, Identifiable {
         case .gainers: return .gainers
         case .losers: return .losers
         case .turnover: return .turnover
+        case .turnoverRate: return .turnoverRate
+        case .amplitude: return .amplitude
         default: return nil
         }
     }
@@ -46,10 +54,11 @@ enum BoardListMode: String, CaseIterable, Identifiable {
     var isStockRanking: Bool { rankKind != nil }
     var isSectorMode: Bool { sectorKind != nil }
     var isLimitUp: Bool { self == .limitUp }
+    var isLimitDown: Bool { self == .limitDown }
     var isBillboard: Bool { self == .billboard }
 }
 
-/// 看盘补充：A 股指数条 + 个股榜 + 行业/概念 + 涨停池 + 龙虎榜。
+/// 看盘补充：A 股指数条 + 多榜概览 + 行业/概念 + 涨跌停 + 龙虎榜。
 @MainActor
 @Observable
 final class MarketBoardStore {
@@ -57,13 +66,23 @@ final class MarketBoardStore {
 
     private(set) var indexQuotes: [String: Quote] = [:]
 
-    // 个股榜
+    // 各榜独立缓存（全屏多块同时展示，互不覆盖）
+    private(set) var gainers: [MarketRankItem] = []
+    private(set) var losers: [MarketRankItem] = []
+    private(set) var turnoverBoard: [MarketRankItem] = []
+    private(set) var turnoverRateBoard: [MarketRankItem] = []
+    private(set) var amplitudeBoard: [MarketRankItem] = []
+
+    /// 兼容旧单列 UI：当前模式对应的列表。
     private(set) var ranking: [MarketRankItem] = []
     private(set) var rankingKind: MarketRankKind = .gainers
     private(set) var rankingLoading = false
     private(set) var rankingError: String?
+    private(set) var overviewLoading = false
 
     // 板块
+    private(set) var industrySectors: [SectorBoard] = []
+    private(set) var conceptSectors: [SectorBoard] = []
     private(set) var sectors: [SectorBoard] = []
     private(set) var sectorKind: SectorKind = .industry
     private(set) var activeSector: SectorBoard?
@@ -71,17 +90,20 @@ final class MarketBoardStore {
     private(set) var sectorLoading = false
     private(set) var sectorError: String?
 
-    // 涨停池
+    // 涨停 / 跌停
     private(set) var limitUp: [MarketRankItem] = []
+    private(set) var limitDown: [MarketRankItem] = []
     private(set) var limitUpLoading = false
+    private(set) var limitDownLoading = false
     private(set) var limitUpError: String?
+    private(set) var limitDownError: String?
 
     // 龙虎榜
     private(set) var billboard: [BillboardEntry] = []
     private(set) var billboardLoading = false
     private(set) var billboardError: String?
 
-    // 当前选中标的资金流（分钟/日净流入摘要）
+    // 当前选中标的资金流
     private(set) var fundFlow: FundFlowSnapshot?
     private(set) var fundFlowLoading = false
 
@@ -104,20 +126,32 @@ final class MarketBoardStore {
         indexTask = Task { [weak self] in
             await self?.loopIndices()
         }
-        Task { await refreshRanking(kind: .gainers) }
+        Task { await refreshOverview() }
     }
 
-    /// 进入「榜单」工作区或切换左栏模式时调用。
+    /// 全屏榜单：并行刷新各块。
+    func refreshOverview() async {
+        overviewLoading = true
+        defer { overviewLoading = false }
+        async let g: Void = refreshRanking(kind: .gainers)
+        async let l: Void = refreshRanking(kind: .losers)
+        async let t: Void = refreshRanking(kind: .turnover)
+        async let tr: Void = refreshRanking(kind: .turnoverRate)
+        async let am: Void = refreshRanking(kind: .amplitude)
+        async let ind: Void = refreshSectors(kind: .industry)
+        async let con: Void = refreshSectors(kind: .concept)
+        async let up: Void = refreshLimitUp()
+        async let down: Void = refreshLimitDown()
+        async let bill: Void = refreshBillboard()
+        _ = await (g, l, t, tr, am, ind, con, up, down, bill)
+    }
+
+    /// 进入「榜单」或切换模式时调用。
     func applyMode(_ mode: BoardListMode) async {
         listMode = mode
-        if let kind = mode.rankKind {
-            await refreshRanking(kind: kind)
-        } else if let sk = mode.sectorKind {
-            await refreshSectors(kind: sk)
-        } else if mode.isLimitUp {
-            await refreshLimitUp()
-        } else if mode.isBillboard {
-            await refreshBillboard()
+        if mode.rankKind != nil || mode.isLimitUp || mode.isLimitDown || mode.isBillboard || mode.isSectorMode {
+            // 全屏模式：整页刷新；单列模式仍按需
+            await refreshOverview()
         }
     }
 
@@ -128,20 +162,27 @@ final class MarketBoardStore {
     // MARK: - 个股榜
 
     func refreshRanking(kind: MarketRankKind) async {
-        rankingKind = kind
-        rankingLoading = true
-        rankingError = nil
-        defer { rankingLoading = false }
-
+        let items: [MarketRankItem]
         if usingReal {
             do {
-                ranking = try await rankClient.ranking(kind: kind, limit: 40)
+                items = try await rankClient.ranking(kind: kind, limit: 30)
             } catch {
                 rankingError = "榜单暂时不可用"
-                if ranking.isEmpty { ranking = mockRanking(kind: kind) }
+                items = mockRanking(kind: kind)
             }
         } else {
-            ranking = mockRanking(kind: kind)
+            items = mockRanking(kind: kind)
+        }
+        switch kind {
+        case .gainers: gainers = items
+        case .losers: losers = items
+        case .turnover: turnoverBoard = items
+        case .turnoverRate: turnoverRateBoard = items
+        case .amplitude: amplitudeBoard = items
+        }
+        if listMode.rankKind == kind {
+            rankingKind = kind
+            ranking = items
         }
     }
 
@@ -149,32 +190,46 @@ final class MarketBoardStore {
 
     func refreshSectors(kind: SectorKind) async {
         sectorKind = kind
-        activeSector = nil
-        sectorConstituents = []
-        sectorLoading = true
-        sectorError = nil
-        defer { sectorLoading = false }
+        if listMode.sectorKind == kind {
+            activeSector = nil
+            sectorConstituents = []
+            sectorLoading = true
+            sectorError = nil
+        }
+        defer {
+            if listMode.sectorKind == kind { sectorLoading = false }
+        }
 
+        var loaded: [SectorBoard] = []
         if usingReal {
             do {
-                sectors = try await sectorClient.sectors(kind: kind, limit: 40)
+                loaded = try await sectorClient.sectors(kind: kind, limit: 24)
             } catch {
-                // 东财 push2 偶发空响应 → 新浪兜底
                 do {
                     switch kind {
                     case .industry:
-                        sectors = try await sinaSector.industrySectors(limit: 40)
+                        loaded = try await sinaSector.industrySectors(limit: 24)
                     case .concept:
-                        sectors = try await sinaSector.conceptSectors(limit: 16)
+                        loaded = try await sinaSector.conceptSectors(limit: 16)
                     }
-                    if sectors.isEmpty { sectorError = "板块暂时不可用" }
+                    if loaded.isEmpty, listMode.sectorKind == kind {
+                        sectorError = "板块暂时不可用"
+                    }
                 } catch {
-                    sectorError = "板块暂时不可用"
-                    sectors = mockSectors(kind: kind)
+                    if listMode.sectorKind == kind { sectorError = "板块暂时不可用" }
+                    loaded = mockSectors(kind: kind)
                 }
             }
         } else {
-            sectors = mockSectors(kind: kind)
+            loaded = mockSectors(kind: kind)
+        }
+
+        switch kind {
+        case .industry: industrySectors = loaded
+        case .concept: conceptSectors = loaded
+        }
+        if sectorKind == kind {
+            sectors = loaded
         }
     }
 
@@ -185,7 +240,6 @@ final class MarketBoardStore {
         defer { sectorLoading = false }
 
         if usingReal {
-            // 东财 BK 码走 clist；新浪 node 走新浪成分
             if board.sourceNode.hasPrefix("BK") {
                 do {
                     sectorConstituents = try await sectorClient.constituents(boardCode: board.sourceNode, limit: 40)
@@ -211,7 +265,7 @@ final class MarketBoardStore {
         sectorConstituents = []
     }
 
-    // MARK: - 涨停池
+    // MARK: - 涨停 / 跌停
 
     func refreshLimitUp() async {
         limitUpLoading = true
@@ -220,13 +274,30 @@ final class MarketBoardStore {
 
         if usingReal {
             do {
-                limitUp = try await limitUpClient.limitUpPool(limit: 50)
+                limitUp = try await limitUpClient.limitUpPool(limit: 40)
             } catch {
                 limitUpError = "涨停池暂时不可用"
                 if limitUp.isEmpty { limitUp = mockLimitUp() }
             }
         } else {
             limitUp = mockLimitUp()
+        }
+    }
+
+    func refreshLimitDown() async {
+        limitDownLoading = true
+        limitDownError = nil
+        defer { limitDownLoading = false }
+
+        if usingReal {
+            do {
+                limitDown = try await limitUpClient.limitDownPool(limit: 40)
+            } catch {
+                limitDownError = "跌停池暂时不可用"
+                if limitDown.isEmpty { limitDown = mockLimitDown() }
+            }
+        } else {
+            limitDown = mockLimitDown()
         }
     }
 
@@ -238,7 +309,7 @@ final class MarketBoardStore {
         defer { billboardLoading = false }
         if usingReal {
             do {
-                billboard = try await billboardClient.daily(limit: 40)
+                billboard = try await billboardClient.daily(limit: 30)
             } catch {
                 billboardError = "龙虎榜暂时不可用"
                 if billboard.isEmpty { billboard = mockBillboard() }
@@ -331,22 +402,19 @@ final class MarketBoardStore {
                 changePercent: q.changePercent,
                 change: q.change,
                 volumeLots: q.volume / 100,
-                turnover: q.turnover
+                turnover: q.turnover,
+                turnoverRate: abs(q.changePercent) * 0.4 + 1.2,
+                amplitude: abs(q.changePercent) * 1.3 + 0.8
             ))
         }
-        switch kind {
-        case .gainers: items.sort { $0.changePercent > $1.changePercent }
-        case .losers: items.sort { $0.changePercent < $1.changePercent }
-        case .turnover: items.sort { $0.turnover > $1.turnover }
-        }
-        return Array(items.prefix(40))
+        return Array(EastmoneyRankClient.enforceOrder(items, kind: kind).prefix(30))
     }
 
     private func mockSectors(kind: SectorKind) -> [SectorBoard] {
         let names: [String] = {
             switch kind {
-            case .industry: return ["电子信息", "机械行业", "医药生物", "电力行业", "食品饮料"]
-            case .concept: return ["人工智能", "新能源车", "半导体", "机器人", "低空经济"]
+            case .industry: return ["电子信息", "机械行业", "医药生物", "电力行业", "食品饮料", "计算机"]
+            case .concept: return ["人工智能", "新能源车", "半导体", "机器人", "低空经济", "商业航天"]
             }
         }()
         let base = mockRanking(kind: .gainers)
@@ -368,6 +436,12 @@ final class MarketBoardStore {
     private func mockLimitUp() -> [MarketRankItem] {
         mockRanking(kind: .gainers).filter {
             $0.changePercent + 0.05 >= EastmoneyLimitUpClient.limitThreshold(for: $0.symbol)
+        }
+    }
+
+    private func mockLimitDown() -> [MarketRankItem] {
+        mockRanking(kind: .losers).filter {
+            $0.changePercent - 0.05 <= -EastmoneyLimitUpClient.limitThreshold(for: $0.symbol)
         }
     }
 

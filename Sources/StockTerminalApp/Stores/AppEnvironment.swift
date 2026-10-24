@@ -133,13 +133,13 @@ final class AppEnvironment {
         Task { await self.market.select(symbol: sym, timeFrame: tf) }
     }
 
-    /// 进入「榜单」工作区。
+    /// 进入「榜单」工作区（全屏多块概览）。
     func showBoardsWorkspace() {
         workspace = .boards
-        Task { await marketBoard.applyMode(marketBoard.listMode) }
+        Task { await marketBoard.refreshOverview() }
     }
 
-    /// 榜单左栏切模式。
+    /// 榜单模式切换（全屏下触发整页刷新）。
     func setBoardMode(_ mode: BoardListMode) {
         guard isReady else { return }
         workspace = .boards

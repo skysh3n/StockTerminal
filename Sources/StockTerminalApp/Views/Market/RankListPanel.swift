@@ -12,7 +12,7 @@ struct RankListPanel: View {
             HStack(spacing: 6) {
                 Text("代码 / 名称").tracking(0.3)
                 Spacer(minLength: 2)
-                Text(board.rankingKind == .turnover ? "成交额" : "现价")
+                Text(rankSecondaryHeader(board.rankingKind))
                     .tracking(0.3)
                     .frame(width: 66, alignment: .trailing)
                 Text("涨跌幅").tracking(0.3).frame(width: 62, alignment: .trailing)
@@ -33,7 +33,7 @@ struct RankListPanel: View {
                             RankRowView(
                                 item: item,
                                 selected: env.watchlist.selectedCode == item.symbol.fullCode,
-                                showTurnover: board.rankingKind == .turnover
+                                kind: board.rankingKind
                             )
                             .padding(.horizontal, 6)
                             .contentShape(Rectangle())
@@ -50,12 +50,21 @@ struct RankListPanel: View {
             }
         }
     }
+
+    private func rankSecondaryHeader(_ kind: MarketRankKind) -> String {
+        switch kind {
+        case .turnover: return "成交额"
+        case .turnoverRate: return "换手"
+        case .amplitude: return "振幅"
+        case .gainers, .losers: return "现价"
+        }
+    }
 }
 
 struct RankRowView: View {
     let item: MarketRankItem
     let selected: Bool
-    let showTurnover: Bool
+    let kind: MarketRankKind
 
     var body: some View {
         let color = Sem.change(item.changePercent)
@@ -72,14 +81,29 @@ struct RankRowView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .trailing, spacing: 1.5) {
-                if showTurnover {
+                switch kind {
+                case .turnover:
                     Text(Fmt.amount(item.turnover))
                         .font(.dsCallout(medium: true))
                         .foregroundStyle(Color.dsTextPrimary)
                     Text(Fmt.price(item.lastPrice))
                         .font(.dsMicro())
                         .foregroundStyle(color.opacity(0.85))
-                } else {
+                case .turnoverRate:
+                    Text(String(format: "%.2f%%", item.turnoverRate))
+                        .font(.dsCallout(medium: true))
+                        .foregroundStyle(Color.dsTextPrimary)
+                    Text(Fmt.price(item.lastPrice))
+                        .font(.dsMicro())
+                        .foregroundStyle(color.opacity(0.85))
+                case .amplitude:
+                    Text(String(format: "%.2f%%", item.amplitude))
+                        .font(.dsCallout(medium: true))
+                        .foregroundStyle(Color.dsTextPrimary)
+                    Text(Fmt.price(item.lastPrice))
+                        .font(.dsMicro())
+                        .foregroundStyle(color.opacity(0.85))
+                case .gainers, .losers:
                     Text(Fmt.price(item.lastPrice))
                         .font(.dsCallout(medium: true))
                         .foregroundStyle(color)

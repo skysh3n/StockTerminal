@@ -151,11 +151,11 @@ struct SectorListPanel: View {
             ScrollView {
                 LazyVStack(spacing: 1) {
                     ForEach(items) { item in
-                        RankRowView(
-                            item: item,
-                            selected: env.watchlist.selectedCode == item.symbol.fullCode,
-                            showTurnover: false
-                        )
+                            RankRowView(
+                                item: item,
+                                selected: env.watchlist.selectedCode == item.symbol.fullCode,
+                                kind: .gainers
+                            )
                         .padding(.horizontal, 6)
                         .contentShape(Rectangle())
                         .onTapGesture { env.selectMarketSymbol(item.symbol) }
@@ -177,7 +177,57 @@ struct LimitUpListPanel: View {
     @Environment(AppEnvironment.self) private var env
 
     var body: some View {
-        let board = env.marketBoard
+        limitPoolList(
+            loading: env.marketBoard.limitUpLoading,
+            items: env.marketBoard.limitUp,
+            error: env.marketBoard.limitUpError,
+            emptyHint: "暂无涨停/触板标的",
+            loadingHint: "加载涨停池…"
+        )
+    }
+}
+
+/// 跌停池列表。
+struct LimitDownListPanel: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        limitPoolList(
+            loading: env.marketBoard.limitDownLoading,
+            items: env.marketBoard.limitDown,
+            error: env.marketBoard.limitDownError,
+            emptyHint: "暂无跌停/触板标的",
+            loadingHint: "加载跌停池…"
+        )
+    }
+}
+
+@MainActor
+private func limitPoolList(
+    loading: Bool,
+    items: [MarketRankItem],
+    error: String?,
+    emptyHint: String,
+    loadingHint: String
+) -> some View {
+    LimitPoolListBody(
+        loading: loading,
+        items: items,
+        error: error,
+        emptyHint: emptyHint,
+        loadingHint: loadingHint
+    )
+}
+
+private struct LimitPoolListBody: View {
+    @Environment(AppEnvironment.self) private var env
+    let loading: Bool
+    let items: [MarketRankItem]
+    let error: String?
+    let emptyHint: String
+    let loadingHint: String
+
+    var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Text("代码 / 名称").tracking(0.3)
@@ -190,18 +240,18 @@ struct LimitUpListPanel: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 4)
 
-            if board.limitUpLoading && board.limitUp.isEmpty {
-                EmptyHint(text: "加载涨停池…")
-            } else if board.limitUp.isEmpty {
-                EmptyHint(text: board.limitUpError ?? "暂无涨停/触板标的")
+            if loading && items.isEmpty {
+                EmptyHint(text: loadingHint)
+            } else if items.isEmpty {
+                EmptyHint(text: error ?? emptyHint)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 1) {
-                        ForEach(board.limitUp) { item in
+                        ForEach(items) { item in
                             RankRowView(
                                 item: item,
                                 selected: env.watchlist.selectedCode == item.symbol.fullCode,
-                                showTurnover: false
+                                kind: .gainers
                             )
                             .padding(.horizontal, 6)
                             .contentShape(Rectangle())

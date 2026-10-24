@@ -41,7 +41,8 @@ struct ContentView: View {
                 .layoutPriority(2)
 
             switch env.workspace {
-            case .trading, .boards: tradingWorkspace
+            case .trading: tradingWorkspace
+            case .boards: BoardsWorkspaceView()
             case .global: GlobalMarketsView()
             }
         }

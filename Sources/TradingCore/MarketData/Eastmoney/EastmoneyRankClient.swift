@@ -1,8 +1,12 @@
 import Foundation
 
-/// 东方财富全市场榜单（涨跌幅 / 成交额），公开 clist 接口。
+/// 东方财富全市场榜单（涨跌幅 / 成交额 / 换手 / 振幅），公开 clist 接口。
 public struct EastmoneyRankClient: Sendable {
     private let session: URLSession
+    private let xuangu = EastmoneyLimitUpClient()
+
+    /// 东财页面常用 token；缺省时部分节点会忽略 `po`，导致涨幅/跌幅同序。
+    public static let ut = "fa5fd1943c7b386f172d6893dbfba10b"
 
     public init() {
         session = EastmoneyHTTP.makeSession(referer: "https://quote.eastmoney.com/")
@@ -12,19 +16,53 @@ public struct EastmoneyRankClient: Sendable {
     public static let aShareFS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
 
     public func ranking(kind: MarketRankKind, limit: Int = 40) async throws -> [MarketRankItem] {
+        // fid：f3 涨跌幅 / f6 成交额 / f8 换手率 / f7 振幅
+        // po：0 升序、1 降序（跌幅榜必须升序，否则会与涨幅榜同批股票）
         let (fid, po): (String, Int) = {
             switch kind {
             case .gainers: return ("f3", 1)
             case .losers: return ("f3", 0)
             case .turnover: return ("f6", 1)
+            case .turnoverRate: return ("f8", 1)
+            case .amplitude: return ("f7", 1)
             }
         }()
         let pz = min(max(limit, 1), 50)
-        let fields = "f12,f13,f14,f2,f3,f4,f5,f6"
+        let fields = "f12,f13,f14,f2,f3,f4,f5,f6,f7,f8"
         let query =
-            "pn=1&pz=\(pz)&po=\(po)&np=1&fltt=2&invt=2&fid=\(fid)&fs=\(Self.aShareFS)&fields=\(fields)"
+            "pn=1&pz=\(pz)&po=\(po)&np=1&ut=\(Self.ut)&fltt=2&invt=2&fid=\(fid)&fs=\(Self.aShareFS)&fields=\(fields)"
         let data = try await EastmoneyHTTP.fetchClist(session: session, query: query)
-        return try Self.parse(data: data, limit: pz)
+        var items = try Self.parse(data: data, limit: pz)
+        items = Self.enforceOrder(items, kind: kind)
+        // 跌幅榜：若仍几乎全是上涨股，说明节点忽略了 po=0，改走选股接口兜底
+        if kind == .losers {
+            let upCount = items.filter { $0.changePercent >= 0 }.count
+            if items.isEmpty || upCount * 2 >= items.count {
+                let fallback = try await xuangu.losersPool(limit: pz)
+                if !fallback.isEmpty {
+                    items = Self.enforceOrder(fallback, kind: .losers)
+                }
+            }
+        }
+        return items
+    }
+
+    /// 按榜单语义强制排序（并在跌幅榜误拿到涨幅批时尽量纠正观感：升序后取最负的在前）。
+    public static func enforceOrder(_ items: [MarketRankItem], kind: MarketRankKind) -> [MarketRankItem] {
+        var out = items
+        switch kind {
+        case .gainers:
+            out.sort { $0.changePercent > $1.changePercent }
+        case .losers:
+            out.sort { $0.changePercent < $1.changePercent }
+        case .turnover:
+            out.sort { $0.turnover > $1.turnover }
+        case .turnoverRate:
+            out.sort { $0.turnoverRate > $1.turnoverRate }
+        case .amplitude:
+            out.sort { $0.amplitude > $1.amplitude }
+        }
+        return out
     }
 
     /// 解析 clist JSON；暴露给单测。
@@ -51,13 +89,17 @@ public struct EastmoneyRankClient: Sendable {
             let change = decimalValue(row["f4"])
             let lots = Int64(doubleValue(row["f5"]).rounded())
             let turnover = decimalValue(row["f6"])
+            let amplitude = doubleValue(row["f7"])
+            let turnoverRate = doubleValue(row["f8"])
             out.append(MarketRankItem(
                 symbol: Symbol(code: code, exchange: exchange, name: name),
                 lastPrice: price,
                 changePercent: pct,
                 change: change,
                 volumeLots: lots,
-                turnover: turnover
+                turnover: turnover,
+                turnoverRate: turnoverRate,
+                amplitude: amplitude
             ))
             if out.count >= limit { break }
         }

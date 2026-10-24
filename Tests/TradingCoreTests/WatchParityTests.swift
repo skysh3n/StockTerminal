@@ -56,8 +56,8 @@ final class WatchParityTests: XCTestCase {
     func testRankClientParse() throws {
         let json = """
         {"rc":0,"data":{"total":2,"diff":[
-          {"f2":32.08,"f3":10.5,"f4":3.05,"f5":1000,"f6":1234567.0,"f12":"600519","f13":1,"f14":"贵州茅台"},
-          {"f2":11.2,"f3":-3.2,"f4":-0.37,"f5":2000,"f6":999.0,"f12":"000001","f13":0,"f14":"平安银行"}
+          {"f2":32.08,"f3":10.5,"f4":3.05,"f5":1000,"f6":1234567.0,"f7":2.1,"f8":1.5,"f12":"600519","f13":1,"f14":"贵州茅台"},
+          {"f2":11.2,"f3":-3.2,"f4":-0.37,"f5":2000,"f6":999.0,"f7":4.0,"f8":3.2,"f12":"000001","f13":0,"f14":"平安银行"}
         ]}}
         """.data(using: .utf8)!
         let items = try EastmoneyRankClient.parse(data: json, limit: 10)
@@ -66,6 +66,27 @@ final class WatchParityTests: XCTestCase {
         XCTAssertEqual(items[0].changePercent, 10.5, accuracy: 0.001)
         XCTAssertEqual(items[1].symbol.fullCode, "SZ000001")
         XCTAssertEqual(items[1].turnover, Decimal(string: "999")!)
+        XCTAssertEqual(items[1].amplitude, 4.0, accuracy: 0.001)
+    }
+
+    func testRankEnforceOrderSeparatesGainersLosers() throws {
+        let a = MarketRankItem(
+            symbol: Symbol(code: "600000", exchange: .sse, name: "A"),
+            lastPrice: 10, changePercent: 5, change: 0.5, volumeLots: 1, turnover: 1
+        )
+        let b = MarketRankItem(
+            symbol: Symbol(code: "000001", exchange: .szse, name: "B"),
+            lastPrice: 10, changePercent: -4, change: -0.4, volumeLots: 1, turnover: 1
+        )
+        let c = MarketRankItem(
+            symbol: Symbol(code: "300001", exchange: .szse, name: "C"),
+            lastPrice: 10, changePercent: 9, change: 0.9, volumeLots: 1, turnover: 1
+        )
+        let gainers = EastmoneyRankClient.enforceOrder([a, b, c], kind: .gainers)
+        let losers = EastmoneyRankClient.enforceOrder([a, b, c], kind: .losers)
+        XCTAssertEqual(gainers.map(\.changePercent), [9, 5, -4])
+        XCTAssertEqual(losers.map(\.changePercent), [-4, 5, 9])
+        XCTAssertNotEqual(gainers.first?.symbol.fullCode, losers.first?.symbol.fullCode)
     }
 
     func testNoticeClientParse() throws {
