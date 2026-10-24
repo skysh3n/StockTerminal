@@ -2,7 +2,7 @@ import SwiftUI
 import DesignSystem
 import TradingCore
 
-/// 蜡烛图容器：手势（悬停十字光标 / 拖拽平移 / 滚轮+捏合缩放 / 双击复位）
+/// 蜡烛图容器：手势（悬停十字光标 / 拖拽平移 / 捏合缩放 / 触控板左右平移 / 双击复位）
 /// 交互状态全部写入 Viewport；主图 body 不读 hoverPoint —— 光标移动只重绘 CrosshairCanvas 层。
 struct CandleChartView: View {
     let series: KLineSeries
@@ -12,7 +12,7 @@ struct CandleChartView: View {
     var hLines: [Double] = []
     var drawHLine: Bool = false
     var onAddHLine: ((Double) -> Void)? = nil
-    /// 是否允许捏合 / 双指纵向滚轮缩放。全球指数关闭，只保留左右平移。
+    /// 是否允许捏合 / 传统鼠标滚轮缩放。全球指数关闭，只保留左右平移。
     var allowsZoom: Bool = true
     /// 平移灵敏度：>1 同样拖动距离移动更多根 K 线。
     var panSensitivity: CGFloat = 1
@@ -61,7 +61,14 @@ struct CandleChartView: View {
                     }
                     .onEnded { _ in viewport.panStartOffset = nil }
             )
-            .modifier(CandleZoomGestures(enabled: allowsZoom && !drawHLine, viewport: viewport))
+            .modifier(CandleAxisGestures(
+                allowsZoom: allowsZoom && !drawHLine,
+                allowsPan: !drawHLine,
+                viewport: viewport,
+                spacing: layout.candleSpacing,
+                totalBars: bars.count,
+                panSensitivity: panSensitivity
+            ))
             .onTapGesture(count: 2) { viewport.reset() }
             .simultaneousGesture(
                 SpatialTapGesture().onEnded { value in
@@ -83,22 +90,46 @@ struct CandleChartView: View {
     }
 }
 
-/// 捏合 + 滚轮缩放；全球指数可关掉，只保留左右拖拽平移。
-private struct CandleZoomGestures: ViewModifier {
-    let enabled: Bool
+/// 时间轴手势：捏合缩放 + 触控板两指左右平移；两指上下不缩放。
+/// 全球指数可关缩放，仍保留触控板横向平移。
+private struct CandleAxisGestures: ViewModifier {
+    let allowsZoom: Bool
+    let allowsPan: Bool
     let viewport: Viewport
+    let spacing: CGFloat
+    let totalBars: Int
+    let panSensitivity: CGFloat
 
     func body(content: Content) -> some View {
-        if enabled {
-            content
-                .simultaneousGesture(
+        Group {
+            if allowsZoom {
+                content.simultaneousGesture(
                     MagnifyGesture()
                         .onChanged { g in viewport.pinch(magnification: g.magnification) }
                         .onEnded { _ in viewport.pinchStartCount = nil }
                 )
-                .overlay(WheelCatcher { dy in viewport.wheelZoom(deltaY: dy) })
-        } else {
-            content
+            } else {
+                content
+            }
+        }
+        .overlay {
+            if allowsPan || allowsZoom {
+                WheelCatcher { delta in
+                    // 触控板：横向 → 看前后 K；纵向忽略（不缩放）。
+                    if allowsPan, abs(delta.deltaX) > 0.01 {
+                        viewport.wheelPan(
+                            deltaX: delta.deltaX,
+                            spacing: spacing,
+                            totalBars: totalBars,
+                            sensitivity: panSensitivity
+                        )
+                    }
+                    // 传统鼠标滚轮刻度：仍可缩放时间轴；触控板纵向不走这里。
+                    if allowsZoom, !delta.precise, abs(delta.deltaY) > 0.01 {
+                        viewport.wheelZoom(deltaY: delta.deltaY)
+                    }
+                }
+            }
         }
     }
 }
