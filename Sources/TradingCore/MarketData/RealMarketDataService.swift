@@ -125,10 +125,20 @@ public struct RealMarketDataService: MarketDataService {
         case .day: period = .day
         case .week: period = .week
         }
-        let fetch = try await tencent.klines(for: sym, period: period, count: max(count, 240))
+        // 日/周 K 接口可能失败；失败时仍尽量用快照拼出今日形成中的柱
+        let fetch = (try? await tencent.klines(for: sym, period: period, count: max(count, 240)))
+            ?? .init(bars: [], preClose: nil)
         var bars = fetch.bars
         if timeFrame == .timeShare {
             bars = Self.lastSessionBars(bars)
+        }
+        if timeFrame == .day,
+           let snap = try? await tencent.snapshots(for: [sym]).first,
+           let forming = FormingKLine.dayBar(from: snap.quote, priceTick: sym.priceTick) {
+            bars = FormingKLine.overlay(bars, with: forming, timeFrame: .day)
+        }
+        if bars.isEmpty, timeFrame != .timeShare {
+            throw ServiceError.backend("K线获取失败")
         }
         return Array(bars.suffix(count))
     }
@@ -226,9 +236,21 @@ public struct RealMarketDataService: MarketDataService {
         let (stream, cont) = AsyncStream.makeStream(of: KLine.self, bufferingPolicy: .bufferingNewest(4))
         let task = Task {
             while !Task.isCancelled {
-                if let fetch = try? await client.klines(for: sym, period: period, count: 3),
-                   let lastBar = fetch.bars.last {
-                    cont.yield(lastBar)
+                switch timeFrame {
+                case .day:
+                    // 日 K 盘中刷新以快照为准：fqkline 常滞后/不可用，尾柱应跟随最新价
+                    if let snap = try? await client.snapshots(for: [sym]).first,
+                       let forming = FormingKLine.dayBar(from: snap.quote, priceTick: sym.priceTick) {
+                        cont.yield(forming)
+                    } else if let fetch = try? await client.klines(for: sym, period: .day, count: 3),
+                              let lastBar = fetch.bars.last {
+                        cont.yield(lastBar)
+                    }
+                default:
+                    if let fetch = try? await client.klines(for: sym, period: period, count: 3),
+                       let lastBar = fetch.bars.last {
+                        cont.yield(lastBar)
+                    }
                 }
                 let iv = Self.pollInterval(open: 5, closed: 60)
                 try? await Task.sleep(for: .seconds(iv))

@@ -39,12 +39,12 @@ final class KLineSeries {
         }
     }
 
-    /// 流式合并：同时间戳替换尾 bar，新时间戳追加；旧数据忽略
+    /// 流式合并：同周期桶（日K=同日，分钟=同时戳）替换尾 bar，更新的追加；更旧的忽略
     func merge(_ bar: KLine) {
-        if let lastTs = bars.last?.timestamp {
-            if bar.timestamp == lastTs {
+        if let last = bars.last {
+            if FormingKLine.sameBucket(last.timestamp, bar.timestamp, timeFrame: timeFrame) {
                 bars[bars.count - 1] = bar
-            } else if bar.timestamp > lastTs {
+            } else if bar.timestamp > last.timestamp {
                 bars.append(bar)
             } else {
                 return
