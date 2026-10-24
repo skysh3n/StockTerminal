@@ -1,8 +1,15 @@
 import Foundation
 
-/// 涨停 / 逼近涨停池（公开选股接口近似；非官方「涨停池」专页）。
+/// 涨停 / 逼近涨停池 + 选股榜兜底（clist 忽略 `fid`/`po` 时用）。
 public struct EastmoneyLimitUpClient: Sendable {
     private let session: URLSession
+
+    public enum SortColumn: String, Sendable {
+        case changeRate = "CHANGE_RATE"
+        case dealAmount = "DEAL_AMOUNT"
+        case turnoverRate = "TURNOVERRATE"
+        case amplitude = "AMPLITUDE"
+    }
 
     public init() {
         let config = URLSessionConfiguration.ephemeral
@@ -17,6 +24,7 @@ public struct EastmoneyLimitUpClient: Sendable {
     /// 拉取涨跌幅 ≥ 9.8% 的标的，再按各自涨停幅度过滤「触及/贴近涨停」。
     public func limitUpPool(limit: Int = 50) async throws -> [MarketRankItem] {
         try await xuanguPool(
+            sort: .changeRate,
             filter: "(CHANGE_RATE%3E=9.8)",
             sortAsc: false,
             limit: limit,
@@ -27,6 +35,7 @@ public struct EastmoneyLimitUpClient: Sendable {
     /// 跌停 / 贴近跌停池。
     public func limitDownPool(limit: Int = 50) async throws -> [MarketRankItem] {
         try await xuanguPool(
+            sort: .changeRate,
             filter: "(CHANGE_RATE%3C=-9.8)",
             sortAsc: true,
             limit: limit,
@@ -38,6 +47,7 @@ public struct EastmoneyLimitUpClient: Sendable {
     /// 跌幅榜兜底：涨跌幅升序且 ≤0（clist 忽略 po 时用）。
     public func losersPool(limit: Int = 40) async throws -> [MarketRankItem] {
         try await xuanguPool(
+            sort: .changeRate,
             filter: "(CHANGE_RATE%3C=0)",
             sortAsc: true,
             limit: limit,
@@ -45,7 +55,19 @@ public struct EastmoneyLimitUpClient: Sendable {
         )
     }
 
+    /// 按指标排序的全市场榜兜底（clist 忽略 fid 时用）。
+    public func rankedPool(sort: SortColumn, limit: Int = 40) async throws -> [MarketRankItem] {
+        try await xuanguPool(
+            sort: sort,
+            filter: "(NEW_PRICE%3E0)",
+            sortAsc: false,
+            limit: limit,
+            nearLimit: false
+        )
+    }
+
     private func xuanguPool(
+        sort: SortColumn,
         filter: String,
         sortAsc: Bool,
         limit: Int,
@@ -54,8 +76,10 @@ public struct EastmoneyLimitUpClient: Sendable {
     ) async throws -> [MarketRankItem] {
         let sr = sortAsc ? 1 : -1
         let ps = min(max(limit * 2, 20), 100)
+        let sty =
+            "SECURITY_CODE,SECURITY_NAME_ABBR,NEW_PRICE,CHANGE_RATE,DEAL_AMOUNT,TURNOVERRATE,AMPLITUDE,SECUCODE"
         let urlString =
-            "https://data.eastmoney.com/dataapi/xuangu/list?st=CHANGE_RATE&sr=\(sr)&ps=\(ps)&p=1&sty=SECURITY_CODE,SECURITY_NAME_ABBR,NEW_PRICE,CHANGE_RATE,DEAL_AMOUNT,SECUCODE&filter=\(filter)"
+            "https://data.eastmoney.com/dataapi/xuangu/list?st=\(sort.rawValue)&sr=\(sr)&ps=\(ps)&p=1&sty=\(sty)&filter=\(filter)"
         guard let url = URL(string: urlString) else { return [] }
         let (data, _) = try await session.data(from: url)
         return try Self.parse(data: data, limit: limit, nearLimit: nearLimit, down: down)
@@ -93,13 +117,17 @@ public struct EastmoneyLimitUpClient: Sendable {
             let price = decimalValue(row["NEW_PRICE"])
             guard price > 0 else { continue }
             let turnover = decimalValue(row["DEAL_AMOUNT"])
+            let turnoverRate = doubleValue(row["TURNOVERRATE"])
+            let amplitude = doubleValue(row["AMPLITUDE"])
             out.append(MarketRankItem(
                 symbol: symbol,
                 lastPrice: price,
                 changePercent: pct,
                 change: price * Decimal(pct / 100.0),
                 volumeLots: 0,
-                turnover: turnover
+                turnover: turnover,
+                turnoverRate: turnoverRate,
+                amplitude: amplitude
             ))
             if out.count >= limit { break }
         }

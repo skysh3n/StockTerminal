@@ -89,6 +89,75 @@ final class WatchParityTests: XCTestCase {
         XCTAssertNotEqual(gainers.first?.symbol.fullCode, losers.first?.symbol.fullCode)
     }
 
+    func testRankEnforceOrderSeparatesTurnoverRateAndAmplitude() {
+        // 涨幅序 A>B>C，但换手 C 最高、振幅 B 最高 → 三榜榜首应不同
+        let a = MarketRankItem(
+            symbol: Symbol(code: "600000", exchange: .sse, name: "A"),
+            lastPrice: 10, changePercent: 9, change: 0.9, volumeLots: 1,
+            turnover: 100, turnoverRate: 2, amplitude: 3
+        )
+        let b = MarketRankItem(
+            symbol: Symbol(code: "000001", exchange: .szse, name: "B"),
+            lastPrice: 10, changePercent: 5, change: 0.5, volumeLots: 1,
+            turnover: 200, turnoverRate: 4, amplitude: 12
+        )
+        let c = MarketRankItem(
+            symbol: Symbol(code: "300001", exchange: .szse, name: "C"),
+            lastPrice: 10, changePercent: 1, change: 0.1, volumeLots: 1,
+            turnover: 50, turnoverRate: 20, amplitude: 5
+        )
+        let pool = [a, b, c]
+        let gainers = EastmoneyRankClient.enforceOrder(pool, kind: .gainers)
+        let turnoverRate = EastmoneyRankClient.enforceOrder(pool, kind: .turnoverRate)
+        let amplitude = EastmoneyRankClient.enforceOrder(pool, kind: .amplitude)
+        XCTAssertEqual(gainers.first?.symbol.code, "600000")
+        XCTAssertEqual(turnoverRate.first?.symbol.code, "300001")
+        XCTAssertEqual(amplitude.first?.symbol.code, "000001")
+        XCTAssertEqual(turnoverRate.map(\.turnoverRate), [20, 4, 2])
+        XCTAssertEqual(amplitude.map(\.amplitude), [12, 5, 3])
+    }
+
+    func testClistIgnoredSortFidDetectsGainersBatch() {
+        // 模拟 clist 忽略 fid=f8：按涨跌幅降序返回，换手率无序
+        var batch: [MarketRankItem] = []
+        for i in 0..<12 {
+            let item = MarketRankItem(
+                symbol: Symbol(code: String(format: "6000%02d", i), exchange: .sse, name: "S\(i)"),
+                lastPrice: 10,
+                changePercent: Double(12 - i),
+                change: 1,
+                volumeLots: 1,
+                turnover: Decimal(100 - i),
+                turnoverRate: Double((i * 7) % 11) + 0.5,
+                amplitude: Double((i * 3) % 9) + 1
+            )
+            batch.append(item)
+        }
+        XCTAssertGreaterThan(EastmoneyRankClient.descendingPairScore(batch.map(\.changePercent)), 0.9)
+        XCTAssertTrue(EastmoneyRankClient.clistIgnoredSortFid(batch, kind: .turnoverRate))
+        XCTAssertTrue(EastmoneyRankClient.clistIgnoredSortFid(batch, kind: .amplitude))
+
+        // 真正按换手降序的页不应触发
+        let byTR = EastmoneyRankClient.enforceOrder(batch, kind: .turnoverRate)
+        XCTAssertFalse(EastmoneyRankClient.clistIgnoredSortFid(byTR, kind: .turnoverRate))
+    }
+
+    func testXuanguParseIncludesTurnoverRateAndAmplitude() throws {
+        let json = """
+        {"result":{"data":[
+          {"SECURITY_CODE":"300001","SECURITY_NAME_ABBR":"测A","NEW_PRICE":10.5,"CHANGE_RATE":2.1,
+           "DEAL_AMOUNT":1.2e8,"TURNOVERRATE":15.5,"AMPLITUDE":8.2,"SECUCODE":"300001.SZ"},
+          {"SECURITY_CODE":"600000","SECURITY_NAME_ABBR":"测B","NEW_PRICE":8.0,"CHANGE_RATE":-1.0,
+           "DEAL_AMOUNT":9e7,"TURNOVERRATE":3.2,"AMPLITUDE":4.0,"SECUCODE":"600000.SH"}
+        ]}}
+        """.data(using: .utf8)!
+        let items = try EastmoneyLimitUpClient.parse(data: json, limit: 10, nearLimit: false)
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[0].turnoverRate, 15.5, accuracy: 0.01)
+        XCTAssertEqual(items[0].amplitude, 8.2, accuracy: 0.01)
+        XCTAssertEqual(items[1].symbol.fullCode, "SH600000")
+    }
+
     func testNoticeClientParse() throws {
         let json = """
         {"data":{"list":[

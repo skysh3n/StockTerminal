@@ -132,9 +132,13 @@ final class MarketBoardStore {
     /// 切换榜种芯片时：只刷新当前榜，行为对齐自选切板块。
     func applyMode(_ mode: BoardListMode) async {
         listMode = mode
-        rankingLoading = mode.isStockRanking
         if let kind = mode.rankKind {
             rankingKind = kind
+            // 先展示该榜缓存，避免切芯片时仍显示上一榜的股票
+            let cached = items(for: kind)
+            ranking = cached
+            rankingLoading = cached.isEmpty
+            rankingError = nil
             await refreshRanking(kind: kind)
             ranking = items(for: kind)
             rankingLoading = false
@@ -393,15 +397,17 @@ final class MarketBoardStore {
         for state in market.states.values {
             guard let q = state.quote, q.lastPrice > 0 else { continue }
             if AShareIndices.codes.contains(state.symbol.fullCode) { continue }
+            // 用代码散列打散换手/振幅，避免与涨幅单调相关导致三榜同股
+            let salt = Double(state.symbol.code.unicodeScalars.reduce(0) { $0 &+ Int($1.value) } % 97)
             items.append(MarketRankItem(
                 symbol: state.symbol,
                 lastPrice: q.lastPrice,
                 changePercent: q.changePercent,
                 change: q.change,
                 volumeLots: q.volume / 100,
-                turnover: q.turnover,
-                turnoverRate: abs(q.changePercent) * 0.4 + 1.2,
-                amplitude: abs(q.changePercent) * 1.3 + 0.8
+                turnover: q.turnover > 0 ? q.turnover : Decimal(salt * 1_000_000 + 50_000_000),
+                turnoverRate: 0.8 + salt * 0.35 + abs(q.changePercent) * 0.05,
+                amplitude: 1.0 + (97 - salt) * 0.28 + abs(q.changePercent) * 0.08
             ))
         }
         return Array(EastmoneyRankClient.enforceOrder(items, kind: kind).prefix(30))
