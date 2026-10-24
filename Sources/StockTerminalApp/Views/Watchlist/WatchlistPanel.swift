@@ -15,20 +15,6 @@ struct WatchlistPanel: View {
         VStack(spacing: 0) {
             PanelHeader(wl.activeBoard?.name ?? "自选") {
                 Tag(text: "\(wl.codes.count)", color: .dsTextSecondary)
-                Menu {
-                    ForEach(WatchlistSort.allCases, id: \.self) { s in
-                        Button(s.label) { env.watchlist.sort = s }
-                    }
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color.dsTextSecondary)
-                        .frame(width: 22, height: 22)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.dsElevated.opacity(0.8)))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dsBorder, lineWidth: 0.6))
-                }
-                .menuStyle(.borderlessButton)
-                .help("排序：\(wl.sort.label)")
             }
             boardStrip
             Rectangle().fill(Color.dsBorder.opacity(0.7)).frame(height: 0.5)
@@ -111,17 +97,49 @@ struct WatchlistPanel: View {
     }
 
     private var watchlistColumns: some View {
-        HStack(spacing: 6) {
-            Text("代码 / 名称").tracking(0.3)
+        let sort = env.watchlist.sort
+        return HStack(spacing: 6) {
+            sortHeader("代码 / 名称", column: .name, alignment: .leading)
             Spacer(minLength: 2)
-            Text("现价").tracking(0.3).frame(width: 58, alignment: .trailing)
-            Text("涨跌幅").tracking(0.3).frame(width: 56, alignment: .trailing)
-            Text("额").tracking(0.3).frame(width: 48, alignment: .trailing)
+            sortHeader("现价", column: .price, alignment: .trailing)
+                .frame(width: 58, alignment: .trailing)
+            sortHeader("涨跌幅", column: .change, alignment: .trailing)
+                .frame(width: 56, alignment: .trailing)
+            sortHeader("额", column: .turnover, alignment: .trailing)
+                .frame(width: 48, alignment: .trailing)
         }
         .font(.dsMicro())
-        .foregroundStyle(Color.dsTextTertiary)
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
+        .help("点击表头排序（当前：\(sort.label)）")
+    }
+
+    private func sortHeader(_ title: String, column: WatchlistSort.Column, alignment: HorizontalAlignment) -> some View {
+        let sort = env.watchlist.sort
+        // 名称列：默认顺序时略强调；数值列：当前排序列强调 + 箭头
+        let active = (column == .name && sort == .manual)
+            || (column != .name && sort.column == column)
+        let showArrow = column != .name && sort.column == column
+        return Button {
+            env.watchlist.toggleSort(column: column)
+        } label: {
+            HStack(spacing: 2) {
+                Text(title)
+                    .tracking(0.3)
+                    .foregroundStyle(active ? Color.dsTextSecondary : Color.dsTextTertiary)
+                if showArrow {
+                    Image(systemName: sort.isAscending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(Color.dsAccent)
+                }
+            }
+            .frame(
+                maxWidth: alignment == .leading ? .infinity : nil,
+                alignment: alignment == .leading ? .leading : .trailing
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

@@ -10,12 +10,15 @@ struct WatchBoard: Identifiable, Hashable {
     var codes: [String]
 }
 
-/// 自选列表排序。
-enum WatchlistSort: String, CaseIterable {
+/// 自选列表排序（由表头点击切换正/倒序；「代码/名称」回默认顺序）。
+enum WatchlistSort: String, CaseIterable, Equatable {
     case manual
     case changeDesc
     case changeAsc
     case priceDesc
+    case priceAsc
+    case turnoverDesc
+    case turnoverAsc
 
     var label: String {
         switch self {
@@ -23,6 +26,51 @@ enum WatchlistSort: String, CaseIterable {
         case .changeDesc: return "涨幅↓"
         case .changeAsc: return "涨幅↑"
         case .priceDesc: return "现价↓"
+        case .priceAsc: return "现价↑"
+        case .turnoverDesc: return "额↓"
+        case .turnoverAsc: return "额↑"
+        }
+    }
+
+    /// 表头所属列；`nil` 表示默认（代码顺序）。
+    enum Column: Hashable {
+        case name, price, change, turnover
+    }
+
+    var column: Column? {
+        switch self {
+        case .manual: return .name
+        case .priceDesc, .priceAsc: return .price
+        case .changeDesc, .changeAsc: return .change
+        case .turnoverDesc, .turnoverAsc: return .turnover
+        }
+    }
+
+    /// 是否升序（箭头朝上）。
+    var isAscending: Bool {
+        switch self {
+        case .manual, .changeAsc, .priceAsc, .turnoverAsc: return true
+        case .changeDesc, .priceDesc, .turnoverDesc: return false
+        }
+    }
+
+    /// 点击某列表头：同列则正倒切换；换列则该列默认倒序（名称列→恢复默认）。
+    static func toggled(from current: WatchlistSort, column: Column) -> WatchlistSort {
+        switch column {
+        case .name:
+            return .manual
+        case .price:
+            if current == .priceDesc { return .priceAsc }
+            if current == .priceAsc { return .priceDesc }
+            return .priceDesc
+        case .change:
+            if current == .changeDesc { return .changeAsc }
+            if current == .changeAsc { return .changeDesc }
+            return .changeDesc
+        case .turnover:
+            if current == .turnoverDesc { return .turnoverAsc }
+            if current == .turnoverAsc { return .turnoverDesc }
+            return .turnoverDesc
         }
     }
 }
@@ -63,7 +111,17 @@ final class WatchlistStore {
             return base.sorted { (quote($0)?.changePercent ?? 999) < (quote($1)?.changePercent ?? 999) }
         case .priceDesc:
             return base.sorted { (quote($0)?.lastPrice ?? 0) > (quote($1)?.lastPrice ?? 0) }
+        case .priceAsc:
+            return base.sorted { (quote($0)?.lastPrice ?? 0) < (quote($1)?.lastPrice ?? 0) }
+        case .turnoverDesc:
+            return base.sorted { (quote($0)?.turnover ?? 0) > (quote($1)?.turnover ?? 0) }
+        case .turnoverAsc:
+            return base.sorted { (quote($0)?.turnover ?? 0) < (quote($1)?.turnover ?? 0) }
         }
+    }
+
+    func toggleSort(column: WatchlistSort.Column) {
+        sort = WatchlistSort.toggled(from: sort, column: column)
     }
 
     init(universe: [Symbol], defaultWatchlist: [String] = []) {
