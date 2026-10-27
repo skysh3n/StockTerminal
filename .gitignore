@@ -11,6 +11,21 @@ xcuserdata/
 .swiftpm/config/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 
+# IDE / 本地配置
+.vscode/
+.idea/
+*.xcuserstate
+
+# 密钥与本地凭证（行情公开接口无需 key；预留给券商对接）
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+credentials.json
+secrets/
+tokens.json
+
 # 本地签名 / 杂散
 *.moved-aside
 *.pbxuser
@@ -21,6 +36,3 @@ xcuserdata/
 !default.mode2v3
 *.perspectivev3
 !default.perspectivev3
-
-# 导出物：tokens.json 由 tokens-export 生成，不入库
-tokens.json
