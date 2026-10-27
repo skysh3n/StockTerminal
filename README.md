@@ -30,6 +30,21 @@ macOS 原生「看盘 + 本地模拟交易」专业终端。自选 / 榜单 / K 
 - **预警**：价格 / 涨跌幅条件 + 系统通知
 - **加自选**：个股详情未在自选时一键加入
 
+## 界面预览
+
+<p align="center">
+  <img src="docs/screenshots/01-trading-watchlist.png" width="48%" alt="交易 · 自选与日K主界面 / Trading workspace with watchlist and daily K-line" />
+  &nbsp;
+  <img src="docs/screenshots/02-global.png" width="48%" alt="全球市场指数看板 / Global markets index board" />
+</p>
+
+<p align="center">
+  <sub>
+    <b>左 · 交易 / 自选 + 日K</b> — Watchlist, candlestick, order book<br/>
+    <b>右 · 全球</b> — Asia / Europe / Americas index cards
+  </sub>
+</p>
+
 ## 快速开始
 
 **要求：** macOS 15+，Xcode 16+ / Swift 6 工具链。
@@ -77,10 +92,6 @@ Sources/
 ```
 
 跨平台预留：`MarketDataService` / `TradingService` / `AccountService` 协议边界；指标库为纯函数，可移植。
-
-## 截图
-
-安装运行后可见三栏布局（自选|榜单 · K 线 · 盘口/交易）。欢迎在 Issue / PR 中补充截图到 `docs/screenshots/`。
 
 ## 路线图
 
